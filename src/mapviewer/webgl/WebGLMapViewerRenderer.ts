@@ -809,6 +809,16 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         }
     }
 
+    override getGroundHeight(tileX: number, tileZ: number): number | undefined {
+        const fineX = Math.floor(tileX * 128);
+        const fineZ = Math.floor(tileZ * 128);
+        const map = this.mapManager.getMap(fineX >> 13, fineZ >> 13);
+        if (!map || !map.heightMapData) {
+            return undefined;
+        }
+        return map.getHeightInterp(0, fineX & 0x1fff, fineZ & 0x1fff);
+    }
+
     override onResize(width: number, height: number): void {
         this.app.resize(width, height);
     }
@@ -881,6 +891,8 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
             } else {
                 live.zoom(wheelDelta);
             }
+        } else {
+            this.handleWheelInput(wheelDelta);
         }
 
         this.updateLive(clientTicksElapsed);

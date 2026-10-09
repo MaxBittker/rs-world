@@ -16,8 +16,10 @@ new. See [DESIGN.md](DESIGN.md) for how it works.
   combat and skilling animations, overhead chat, hitsplats and health bars.
 - **Live npcs**: every npc in view with its server-side movement, animations, overhead text and combat.
 - **Follow a player**: right-click a player → Follow, pick them in the Live panel, or open `?follow=<name>`.
+  `[` and `]` (or Prev/Next in the panel) step to the previous and next player in the list.
   While following, drag (or the arrow keys) orbits the player and the wheel zooms; moving the camera
-  (WASD, Q/E) stops following.
+  (WASD, Q/E, right-drag) stops following. Otherwise the wheel flies the camera forward and back.
+- **Pan**: right-drag slides the camera over the ground. A right click without dragging opens the menu.
 - **World map**: every online player as a dot (white, your followed player orange). Click one to fly there.
 
 ## Running locally
@@ -57,7 +59,7 @@ That only works if that server runs with `WORLD_FEED=true`.
 | `cx cy cz p y v=1`     | Camera position, pitch and yaw, same as osrs.world.                         |
 | `cache=<name>`         | Cache from `caches/caches.json` (default: newest, i.e. `rs-sdk-289`).       |
 
-The Live panel (bottom right) shows connection state, online counts and the player list. Info, under
+The Live panel (bottom right) shows connection state, the online count and every player, 50 to a page. Info, under
 it, credits the original viewer and links the repos. Render settings (top right) default to one step
 brighter than the old client default and 1 rendered pixel per CSS pixel. Pick Native there for
 full hi-dpi resolution.

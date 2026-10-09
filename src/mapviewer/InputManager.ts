@@ -18,6 +18,9 @@ export function getAxisDeadzone(axis: number, zone: number): number {
     }
 }
 
+// Pixels a right press can move and still count as a click (opening the menu) rather than a pan.
+const PAN_CLICK_THRESHOLD = 4;
+
 export class InputManager {
     element?: HTMLElement;
 
@@ -37,6 +40,13 @@ export class InputManager {
 
     // Accumulated wheel scroll (pixels, positive = towards the user) since the last read.
     wheelDelta: number = 0;
+
+    // Right-button drag pans the camera. A right click that doesn't move opens the menu on release.
+    panX: number = -1;
+    panY: number = -1;
+    private panStartX: number = -1;
+    private panStartY: number = -1;
+    private panMoved: boolean = false;
 
     isTouch: boolean = false;
 
@@ -136,6 +146,19 @@ export class InputManager {
         return this.dragX !== -1 && this.dragY !== -1;
     }
 
+    isPanning(): boolean {
+        return this.panX !== -1 && this.panY !== -1;
+    }
+
+    // Mouse movement to pan by this frame, once a right drag has moved past the click threshold.
+    getPanDeltaX(): number {
+        return this.isPanning() && this.panMoved ? this.mouseX - this.panX : 0;
+    }
+
+    getPanDeltaY(): number {
+        return this.isPanning() && this.panMoved ? this.mouseY - this.panY : 0;
+    }
+
     isPointerLock(): boolean {
         return document.pointerLockElement === this.element;
     }
@@ -204,10 +227,21 @@ export class InputManager {
     };
 
     private onMouseDown = (event: MouseEvent) => {
-        if (event.button !== 0 || !this.element) {
+        if (!this.element) {
             return;
         }
         const [x, y] = getMousePos(this.element, event);
+        if (event.button === 2) {
+            this.panX = this.panStartX = x;
+            this.panY = this.panStartY = y;
+            this.panMoved = false;
+            this.mouseX = x;
+            this.mouseY = y;
+            return;
+        }
+        if (event.button !== 0) {
+            return;
+        }
         this.dragX = x;
         this.dragY = y;
         this.mouseX = x;
@@ -222,6 +256,13 @@ export class InputManager {
         this.mouseX = x;
         this.mouseY = y;
 
+        if (
+            this.isPanning() &&
+            Math.hypot(x - this.panStartX, y - this.panStartY) > PAN_CLICK_THRESHOLD
+        ) {
+            this.panMoved = true;
+        }
+
         if (this.isPointerLock()) {
             this.deltaMouseX -= event.movementX;
             this.deltaMouseY -= event.movementY;
@@ -230,6 +271,14 @@ export class InputManager {
     };
 
     private onMouseUp = (event: MouseEvent) => {
+        if (event.button === 2) {
+            if (this.isPanning() && !this.panMoved && this.element) {
+                [this.pickX, this.pickY] = getMousePos(this.element, event);
+            }
+            this.panX = -1;
+            this.panY = -1;
+            return;
+        }
         this.dragX = -1;
         this.dragY = -1;
     };
@@ -265,13 +314,8 @@ export class InputManager {
     };
 
     private onContextMenu = (event: MouseEvent) => {
-        if (!this.element) {
-            return;
-        }
+        // The menu opens on right button release instead (see onMouseUp), so a drag can pan.
         event.preventDefault();
-        const [x, y] = getMousePos(this.element, event);
-        this.pickX = x;
-        this.pickY = y;
     };
 
     onPositionJoystickMove = (event: IJoystickUpdateEvent) => {
@@ -301,6 +345,8 @@ export class InputManager {
         this.mouseY = -1;
         this.dragX = -1;
         this.dragY = -1;
+        this.panX = -1;
+        this.panY = -1;
     }
 
     onFrameEnd() {
@@ -310,6 +356,10 @@ export class InputManager {
         if (this.isDragging() && !this.isTouch) {
             this.dragX = this.mouseX;
             this.dragY = this.mouseY;
+        }
+        if (this.isPanning() && this.panMoved) {
+            this.panX = this.mouseX;
+            this.panY = this.mouseY;
         }
         this.deltaMouseX = 0;
         this.deltaMouseY = 0;

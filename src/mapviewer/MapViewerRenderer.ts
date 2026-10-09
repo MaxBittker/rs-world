@@ -1,8 +1,10 @@
 import { Schema } from "leva/dist/declarations/src/types";
 
 import { Renderer } from "../components/renderer/Renderer";
+import { DEGREES_TO_RADIANS, RS_TO_RADIANS } from "../rs/MathConstants";
 import { SceneBuilder } from "../rs/scene/SceneBuilder";
 import { clamp } from "../util/MathUtil";
+import { ProjectionType } from "./Camera";
 import { getAxisDeadzone } from "./InputManager";
 import { MapManager, MapSquare } from "./MapManager";
 import { MapViewer } from "./MapViewer";
@@ -138,6 +140,26 @@ export abstract class MapViewerRenderer<T extends MapSquare = MapSquare> extends
         }
     }
 
+    // Mouse wheel on the free camera: fly along the view direction, or change the ortho zoom.
+    // Positive deltas (scrolling towards the user) zoom out.
+    handleWheelInput(wheelDelta: number) {
+        if (wheelDelta === 0) {
+            return;
+        }
+        const camera = this.mapViewer.camera;
+        if (camera.projectionType === ProjectionType.ORTHO) {
+            camera.orthoZoom = clamp(camera.orthoZoom * Math.exp(-wheelDelta * 0.0015), 1, 60);
+            camera.updated = true;
+        } else {
+            let speedMult = this.mapViewer.cameraSpeed;
+            if (this.mapViewer.inputManager.isShiftDown()) {
+                speedMult *= 10;
+            }
+            // About 2 tiles per wheel notch.
+            camera.move(0, 0, wheelDelta * 0.02 * speedMult, true);
+        }
+    }
+
     handleMouseInput() {
         const inputManager = this.mapViewer.inputManager;
         const camera = this.mapViewer.camera;
@@ -158,6 +180,36 @@ export abstract class MapViewerRenderer<T extends MapSquare = MapSquare> extends
                 camera.updateYaw(camera.yaw, deltaMouseX * -0.9);
             }
         }
+
+        const panX = inputManager.getPanDeltaX();
+        const panY = inputManager.getPanDeltaY();
+        if (panX !== 0 || panY !== 0) {
+            this.panCamera(panX, panY);
+        }
+    }
+
+    // Right drag: slide the camera over the ground so the ground follows the cursor.
+    panCamera(deltaX: number, deltaY: number) {
+        const camera = this.mapViewer.camera;
+        // Ground distance per screen pixel up/down grows as the camera looks closer to level.
+        const lookDown = Math.max(Math.sin(-camera.pitch * RS_TO_RADIANS), 0.2);
+        let tilesPerPixel: number;
+        if (camera.projectionType === ProjectionType.ORTHO) {
+            const cssToDevice = this.canvas.width / Math.max(this.canvas.offsetWidth, 1);
+            tilesPerPixel = (2 / camera.orthoZoom) * cssToDevice;
+        } else {
+            const groundY = this.getGroundHeight(camera.getPosX(), camera.getPosZ()) ?? 0;
+            const height = Math.max(groundY / 128 - camera.getPosY(), 1);
+            const depth = Math.min(height / lookDown, 256);
+            const viewHeight = 2 * depth * Math.tan((camera.fov * DEGREES_TO_RADIANS) / 2);
+            tilesPerPixel = viewHeight / Math.max(this.canvas.offsetHeight, 1);
+        }
+        camera.move(deltaX * tilesPerPixel, 0, (-deltaY * tilesPerPixel) / lookDown);
+    }
+
+    // Ground height (fine units, negative is up) at a tile position, if that map is loaded.
+    getGroundHeight(tileX: number, tileZ: number): number | undefined {
+        return undefined;
     }
 
     handleControllerInput(deltaTime: number) {
