@@ -25,8 +25,8 @@ way the game client does.
 
 There are two pieces:
 
-- **Engine feed**: `server/engine/src/web/worldfeed.ts` on the rs-sdk branch `world-feed`, about
-  600 lines, off by default.
+- **Engine feed**: `server/engine/src/web/worldfeed.ts` in rs-sdk, about 600 lines, off unless
+  `WORLD_FEED=true`.
 - **Live layer**: `src/live/` in this repo, plus small hooks in the viewer.
 
 ## 1. The engine feed

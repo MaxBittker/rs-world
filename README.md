@@ -22,10 +22,11 @@ new. See [DESIGN.md](DESIGN.md) for how it works.
 
 ## Running locally
 
-You need an rs-sdk engine with the world feed enabled. It lives on the rs-sdk branch `world-feed`.
+You need an rs-sdk engine with its world feed turned on. The feed ships with rs-sdk and is off by
+default.
 
 ```sh
-# 1. Engine with the feed on (from the rs-sdk checkout on branch world-feed)
+# 1. Engine with the feed on (from an rs-sdk checkout)
 cd ../rs-sdk/server/engine
 WORLD_FEED=true EASY_STARTUP=true bun run src/app.ts
 
@@ -45,7 +46,7 @@ yarn sync-cache --server https://rs-sdk-demo.fly.dev
 # then open http://localhost:3000/?live=wss://rs-sdk-demo.fly.dev/worldfeed
 ```
 
-That only works once that server runs the `world-feed` branch with `WORLD_FEED=true`.
+That only works if that server runs with `WORLD_FEED=true`.
 
 ## URL parameters
 
