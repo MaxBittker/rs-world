@@ -108,6 +108,16 @@ export const MapViewerControls = memo(
                     case "F4":
                         removeLastPoint();
                         break;
+                    case "[":
+                    case "]":
+                        // Previous/next player, unless typing in the search box.
+                        if (!(e.target instanceof HTMLInputElement)) {
+                            mapViewer.live?.followAdjacent(
+                                e.key === "]" ? 1 : -1,
+                                mapViewer.camera,
+                            );
+                        }
+                        break;
                 }
             }
 

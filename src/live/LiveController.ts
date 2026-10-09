@@ -8,6 +8,7 @@ import { IndexedSprite } from "../rs/sprite/IndexedSprite";
 import { LiveEntity, LivePlayer } from "./LiveEntity";
 import { LiveWorld } from "./LiveWorld";
 import { FeedStatus, WorldFeedClient } from "./WorldFeedClient";
+import { RosterPlayer } from "./protocol";
 
 // Tiles streamed around the camera; the engine caps a subscription at 384 x 384.
 const MIN_AREA_RADIUS = 32;
@@ -64,6 +65,11 @@ export class LiveController {
     // Orbit distance in tiles; 0 until the camera has been aimed at the player.
     private orbitDistance: number = 0;
     private lastRosterJumpTick: number = -1;
+
+    // The Live panel's search. It lives here so the next/previous player keys step through the
+    // list the panel shows, even with the UI hidden.
+    playerFilter: string = "";
+    private listed?: { roster: RosterPlayer[]; filter: string; players: RosterPlayer[] };
 
     private started: boolean = false;
 
@@ -163,6 +169,42 @@ export class LiveController {
         this.followSlot = -1;
         this.lastRosterJumpTick = this.world.rosterTick;
         this.version++;
+    }
+
+    // Online players matching the panel's search, by name.
+    listPlayers(): RosterPlayer[] {
+        const roster = this.world.rosterPlayers;
+        const filter = this.playerFilter.trim().toLowerCase();
+        if (this.listed?.roster !== roster || this.listed.filter !== filter) {
+            const players = roster
+                .filter((p) => !filter || p[1].toLowerCase().includes(filter))
+                .sort((a, b) => a[1].localeCompare(b[1]));
+            this.listed = { roster, filter, players };
+        }
+        return this.listed.players;
+    }
+
+    // Go to the listed player after (step 1) or before (step -1) the followed one, wrapping
+    // around. Without one, start at that end of the list.
+    followAdjacent(step: 1 | -1, camera: Camera): void {
+        const players = this.listPlayers();
+        if (players.length === 0) {
+            return;
+        }
+        let index = step > 0 ? -1 : players.length;
+        const followed = this.followName;
+        if (followed) {
+            const name = followed.toLowerCase();
+            index = players.findIndex((p) => p[1].toLowerCase() === name);
+            if (index === -1) {
+                // Not listed (logged out, or filtered away): step from where they'd sort.
+                const after = players.findIndex((p) => p[1].localeCompare(followed) > 0);
+                const insertAt = after === -1 ? players.length : after;
+                index = step > 0 ? insertAt - 1 : insertAt;
+            }
+        }
+        const next = players[(index + step + players.length) % players.length];
+        this.goToPlayer(next[1], camera);
     }
 
     unfollow(): void {
