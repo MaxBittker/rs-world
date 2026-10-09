@@ -30,3 +30,9 @@
 .joystick-container.right {
     right: 0;
 }
+
+.live-overlay-container {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}

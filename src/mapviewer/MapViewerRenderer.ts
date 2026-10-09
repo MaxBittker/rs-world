@@ -48,6 +48,8 @@ export abstract class MapViewerRenderer<T extends MapSquare = MapSquare> extends
 
     queueLoadMap(mapX: number, mapY: number): void {}
 
+    setLoadNpcs?(enabled: boolean): void;
+
     handleInput(deltaTime: number) {
         this.handleKeyInput(deltaTime);
         this.handleMouseInput();

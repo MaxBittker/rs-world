@@ -5,6 +5,7 @@ import frameFragShader from "./frame.frag.glsl";
 import frameVertShader from "./frame.vert.glsl";
 import mainFragShader from "./main.frag.glsl";
 import mainVertShader from "./main.vert.glsl";
+import entityVertShader from "./entity.vert.glsl";
 import npcVertShader from "./npc.vert.glsl";
 
 export function createProgram(
@@ -29,6 +30,10 @@ export function createMainProgram(hasMultiDraw: boolean, discardAlpha: boolean):
 
 export function createNpcProgram(hasMultiDraw: boolean, discardAlpha: boolean): ProgramSource {
     return createProgram(npcVertShader, mainFragShader, hasMultiDraw, discardAlpha);
+}
+
+export function createEntityProgram(hasMultiDraw: boolean): ProgramSource {
+    return createProgram(entityVertShader, mainFragShader, hasMultiDraw, true);
 }
 
 export const FRAME_PROGRAM = [frameVertShader, frameFragShader];

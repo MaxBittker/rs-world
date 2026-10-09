@@ -1,10 +1,12 @@
-import { pixelRatio } from "../../util/DeviceUtil";
 import { RenderStats } from "./RenderStats";
 
-function resizeCanvas(canvas: HTMLCanvasElement) {
-    const devicePixelRatio = pixelRatio;
-    const width = canvas.offsetWidth * devicePixelRatio;
-    const height = canvas.offsetHeight * devicePixelRatio;
+// Rendered pixels per CSS pixel. 1 keeps hi-dpi screens from rendering 4-6x the pixels, and the
+// slightly softer image suits the old models; "Native" in the Render settings uses the full ratio.
+export const DEFAULT_RESOLUTION_SCALE = 1;
+
+function resizeCanvas(canvas: HTMLCanvasElement, scale: number) {
+    const width = Math.max(Math.round(canvas.offsetWidth * scale), 1);
+    const height = Math.max(Math.round(canvas.offsetHeight * scale), 1);
 
     if (width !== canvas.width || height !== canvas.height) {
         canvas.width = width;
@@ -21,6 +23,8 @@ export abstract class Renderer {
     running: boolean = false;
 
     fpsLimit: number = 999;
+
+    resolutionScale: number = DEFAULT_RESOLUTION_SCALE;
 
     stats: RenderStats = new RenderStats();
 
@@ -53,7 +57,7 @@ export abstract class Renderer {
 
     frameCallback = (time: DOMHighResTimeStamp) => {
         try {
-            const resized = resizeCanvas(this.canvas);
+            const resized = resizeCanvas(this.canvas, this.resolutionScale);
             if (resized) {
                 this.onResize(this.canvas.width, this.canvas.height);
             }

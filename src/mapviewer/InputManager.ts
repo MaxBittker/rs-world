@@ -35,6 +35,9 @@ export class InputManager {
     deltaMouseX: number = 0;
     deltaMouseY: number = 0;
 
+    // Accumulated wheel scroll (pixels, positive = towards the user) since the last read.
+    wheelDelta: number = 0;
+
     isTouch: boolean = false;
 
     pickX: number = -1;
@@ -71,6 +74,8 @@ export class InputManager {
         element.addEventListener("contextmenu", this.onContextMenu);
 
         element.addEventListener("focusout", this.onFocusOut);
+
+        element.addEventListener("wheel", this.onWheel, { passive: false });
     }
 
     cleanUp() {
@@ -98,7 +103,22 @@ export class InputManager {
         this.element.removeEventListener("contextmenu", this.onContextMenu);
 
         this.element.removeEventListener("focusout", this.onFocusOut);
+
+        this.element.removeEventListener("wheel", this.onWheel);
     }
+
+    // Returns the scroll since the last call (lines and pages normalised to pixels).
+    takeWheelDelta(): number {
+        const delta = this.wheelDelta;
+        this.wheelDelta = 0;
+        return delta;
+    }
+
+    private onWheel = (event: WheelEvent) => {
+        event.preventDefault();
+        const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
+        this.wheelDelta += event.deltaY * scale;
+    };
 
     isShiftDown(): boolean {
         return this.isKeyDown("ShiftLeft") || this.isKeyDown("ShiftRight");

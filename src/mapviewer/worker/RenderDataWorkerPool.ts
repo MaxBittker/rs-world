@@ -3,6 +3,7 @@ import { QueuedTask } from "threads/dist/master/pool";
 import { WorkerDescriptor } from "threads/dist/master/pool-types";
 import { ObservablePromise } from "threads/dist/observable-promise";
 
+import { EntityAnimData, EntityAnimRequest } from "../../live/EntityModelLoader";
 import { LoadedCache } from "../Caches";
 import { NpcSpawn } from "../data/npc/NpcSpawn";
 import { ObjSpawn } from "../data/obj/ObjSpawn";
@@ -53,6 +54,14 @@ export class RenderDataWorkerPool {
         input: I,
     ): QueuedTask<RenderDataWorkerThread, D> {
         return this.pool.queue((w) => w.load(loader, input) as ObservablePromise<D>);
+    }
+
+    queueEntityAnim(
+        request: EntityAnimRequest,
+    ): QueuedTask<RenderDataWorkerThread, EntityAnimData | undefined> {
+        return this.pool.queue(
+            (w) => w.loadEntityAnim(request) as ObservablePromise<EntityAnimData | undefined>,
+        );
     }
 
     queueLoadTexture(

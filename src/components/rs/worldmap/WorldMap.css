@@ -86,3 +86,15 @@
         min-width: 100% !important;
     }
 }
+
+.worldmap-marker {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid black;
+    box-sizing: border-box;
+    cursor: pointer;
+}
+
+.worldmap-marker:hover {
+    transform: scale(1.6);
+}

@@ -17,10 +17,15 @@ import {
 } from "picogl";
 
 import { OsrsMenuEntry } from "../../components/rs/menu/OsrsMenu";
+import { LiveController } from "../../live/LiveController";
+import { LiveEntity } from "../../live/LiveEntity";
+import { LiveEntityRenderer } from "../../live/LiveEntityRenderer";
+import { LiveOverlay } from "../../live/LiveOverlay";
 import { createTextureArray } from "../../picogl/PicoTexture";
 import { MenuTargetType } from "../../rs/MenuEntry";
 import { Scene } from "../../rs/scene/Scene";
 import { isTouchDevice, isWebGL2Supported, pixelRatio } from "../../util/DeviceUtil";
+
 import { MapViewer } from "../MapViewer";
 import { MapViewerRenderer } from "../MapViewerRenderer";
 import { MapViewerRendererType, WEBGL } from "../MapViewerRenderers";
@@ -35,8 +40,17 @@ import {
     FRAME_FXAA_PROGRAM,
     FRAME_PROGRAM,
     createMainProgram,
+    createEntityProgram,
     createNpcProgram,
 } from "./shaders/Shaders";
+
+// Render settings: rendered pixels per CSS pixel ("Native" only differs on hi-dpi screens).
+const RESOLUTION_OPTIONS: Record<string, number> = {
+    ...(pixelRatio !== 1 ? { Native: pixelRatio } : {}),
+    "1x": 1,
+    "0.75x": 0.75,
+    "0.5x": 0.5,
+};
 
 const MAX_TEXTURES = 2048;
 const TEXTURE_SIZE = 128;
@@ -102,6 +116,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
     mainProgram?: Program;
     mainAlphaProgram?: Program;
     npcProgram?: Program;
+    entityProgram?: Program;
     frameProgram?: Program;
     frameFxaaProgram?: Program;
 
@@ -145,7 +160,8 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
     skyColor: vec4 = vec4.fromValues(0, 0, 0, 1);
     fogDepth: number = 16;
 
-    brightness: number = 1.0;
+    // 1.0 is the client's darkest setting; each Brightness step brightens by 0.1.
+    brightness: number = 0.8;
     colorBanding: number = 255;
 
     smoothTerrain: boolean = false;
@@ -171,6 +187,11 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
     npcRenderData: Uint16Array = new Uint16Array(16 * 4);
 
     npcDataTextureBuffer: (Texture | undefined)[] = new Array(5);
+
+    // Live world feed entities
+    liveRenderer?: LiveEntityRenderer;
+    liveRendererController?: LiveController;
+    liveOverlay: LiveOverlay = new LiveOverlay();
 
     constructor(public mapViewer: MapViewer) {
         super(mapViewer);
@@ -253,13 +274,21 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
             createNpcProgram(hasMultiDraw, true),
             FRAME_PROGRAM,
             FRAME_FXAA_PROGRAM,
+            createEntityProgram(hasMultiDraw),
         );
 
-        const [mainProgram, mainAlphaProgram, npcProgram, frameProgram, frameFxaaProgram] =
-            programs;
+        const [
+            mainProgram,
+            mainAlphaProgram,
+            npcProgram,
+            frameProgram,
+            frameFxaaProgram,
+            entityProgram,
+        ] = programs;
         this.mainProgram = mainProgram;
         this.mainAlphaProgram = mainAlphaProgram;
         this.npcProgram = npcProgram;
+        this.entityProgram = entityProgram;
         this.frameProgram = frameProgram;
         this.frameFxaaProgram = frameFxaaProgram;
 
@@ -554,12 +583,19 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
                 },
             },
             Brightness: {
-                value: 1,
+                value: Math.round((1.0 - this.brightness) * 10),
                 min: 0,
                 max: 4,
                 step: 1,
                 onChange: (v: number) => {
                     this.brightness = 1.0 - v * 0.1;
+                },
+            },
+            Resolution: {
+                value: this.resolutionScale,
+                options: RESOLUTION_OPTIONS,
+                onChange: (v: number) => {
+                    this.resolutionScale = v;
                 },
             },
             "Color Banding": {
@@ -831,7 +867,23 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         const inputManager = this.mapViewer.inputManager;
         const camera = this.mapViewer.camera;
 
+        // Moving the camera yourself (WASD, up/down, gamepad stick, touch drag) stops following;
+        // rotating doesn't, it orbits the followed player instead.
+        const cameraX = camera.pos[0];
+        const cameraY = camera.pos[1];
+        const cameraZ = camera.pos[2];
         this.handleInput(deltaTime);
+        const wheelDelta = inputManager.takeWheelDelta();
+        const live = this.mapViewer.live;
+        if (live?.isFollowing()) {
+            if (camera.pos[0] !== cameraX || camera.pos[1] !== cameraY || camera.pos[2] !== cameraZ) {
+                live.unfollow();
+            } else {
+                live.zoom(wheelDelta);
+            }
+        }
+
+        this.updateLive(clientTicksElapsed);
 
         camera.update(this.app.width, this.app.height);
 
@@ -885,6 +937,11 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
 
         const tickStart = performance.now();
         this.tickPass(timeSec, ticksElapsed, clientTicksElapsed);
+        if (live && this.liveRenderer) {
+            this.liveRenderer.showPlayers = live.options.showPlayers;
+            this.liveRenderer.showNpcs = live.options.showNpcs;
+            this.liveRenderer.prepare(this.maxLevel, camera.getPosX(), camera.getPosZ());
+        }
         const tickTime = performance.now() - tickStart;
 
         const npcDataTextureIndex = this.updateNpcDataTexture();
@@ -896,6 +953,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         const opaquePassTime = performance.now() - opaquePassStart;
         const opaqueNpcPassStart = performance.now();
         this.renderOpaqueNpcPass(npcDataTextureIndex, npcDataTexture);
+        this.liveRenderer?.render(false, this.textureArray, this.textureMaterials, this.drawBound);
         const opaqueNpcPassTime = performance.now() - opaqueNpcPassStart;
 
         this.app.enable(PicoGL.BLEND);
@@ -904,6 +962,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         const transparentPassTime = performance.now() - transparentPassStart;
         const transparentNpcPassStart = performance.now();
         this.renderTransparentNpcPass(npcDataTextureIndex, npcDataTexture);
+        this.liveRenderer?.render(true, this.textureArray, this.textureMaterials, this.drawBound);
         const transparentNpcPassTime = performance.now() - transparentNpcPassStart;
 
         // Can't sample from renderbuffer so blit to a texture for sampling.
@@ -931,8 +990,8 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
 
                 currInteractions.read(
                     this.gl,
-                    (mouseX * pixelRatio) | 0,
-                    (mouseY * pixelRatio) | 0,
+                    (mouseX * this.resolutionScale) | 0,
+                    (mouseY * this.resolutionScale) | 0,
                 );
             }
         }
@@ -953,6 +1012,10 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         } else {
             this.frameDrawCall.texture("u_frame", this.textureFramebuffer.colorAttachments[0]);
             this.frameDrawCall.draw();
+        }
+
+        if (live && this.liveRenderer) {
+            this.liveOverlay.draw(live, camera, this.getLiveGroundY, this.maxLevel);
         }
 
         // Load new map squares
@@ -1003,6 +1066,43 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
                 2,
             )}ms\n JS: ${this.timer.cpuTime.toFixed(2)}ms`;
         }
+    }
+
+    drawBound = (drawCall: DrawCall, drawRanges: number[][]) => this.draw(drawCall, drawRanges);
+
+    getLiveGroundY = (e: LiveEntity): number | undefined => {
+        return this.liveRenderer?.getGroundHeight(e.level, e.x, e.z)?.y;
+    };
+
+    // Steps the live world and keeps the entity renderer bound to the current controller.
+    updateLive(clientTicksElapsed: number): LiveController | undefined {
+        const live = this.mapViewer.live;
+        if (this.liveRendererController !== live) {
+            this.liveRenderer?.delete();
+            this.liveRenderer = undefined;
+            this.liveRendererController = live;
+        }
+        if (!live) {
+            return undefined;
+        }
+        if (!this.liveRenderer && this.entityProgram && this.sceneUniformBuffer) {
+            this.liveRenderer = new LiveEntityRenderer(
+                this.app,
+                this.entityProgram,
+                this.sceneUniformBuffer,
+                this.mapViewer.workerPool,
+                this.mapViewer.seqTypeLoader,
+                this.mapManager,
+                live.world,
+            );
+        }
+        live.update(
+            clientTicksElapsed,
+            this.mapViewer.camera,
+            this.mapViewer.renderDistance,
+            this.getLiveGroundY,
+        );
+        return live;
     }
 
     tickPass(time: number, ticksElapsed: number, clientTicksElapsed: number): void {
@@ -1309,6 +1409,8 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         const locIds = new Set<number>();
         const objIds = new Set<number>();
         const npcIds = new Set<number>();
+        const liveIds = new Set<string>();
+        const live = this.mapViewer.live;
 
         for (let i = 0; i < INTERACTION_RADIUS + 1; i++) {
             const indices = this.closestInteractIndices.get(i);
@@ -1380,6 +1482,63 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
                         targetType: MenuTargetType.OBJ,
                         targetName: objType.name,
                         targetLevel: -1,
+                        onClick: this.mapViewer.onExamine,
+                    });
+                } else if (
+                    live &&
+                    (interactType === InteractType.LIVE_PLAYER ||
+                        interactType === InteractType.LIVE_NPC)
+                ) {
+                    const isPlayer = interactType === InteractType.LIVE_PLAYER;
+                    const key = (isPlayer ? "p" : "n") + interactId;
+                    if (liveIds.has(key)) {
+                        continue;
+                    }
+                    liveIds.add(key);
+
+                    if (isPlayer) {
+                        const player = live.world.players.get(interactId);
+                        if (!player) {
+                            continue;
+                        }
+                        menuEntries.push({
+                            option: "Follow",
+                            targetId: player.id,
+                            targetType: MenuTargetType.PLAYER,
+                            targetName: player.name,
+                            targetLevel: player.combatLevel,
+                            onClick: () => {
+                                live.follow(player);
+                                this.mapViewer.closeMenu();
+                            },
+                        });
+                        continue;
+                    }
+
+                    const npc = live.world.npcs.get(interactId);
+                    if (!npc || (npc.npcType.name === "null" && !this.mapViewer.debugId)) {
+                        continue;
+                    }
+                    const npcType = npc.npcType;
+                    for (const option of npcType.actions) {
+                        if (!option) {
+                            continue;
+                        }
+                        menuEntries.push({
+                            option,
+                            targetId: npcType.id,
+                            targetType: MenuTargetType.NPC,
+                            targetName: npcType.name,
+                            targetLevel: npcType.combatLevel,
+                            onClick: this.mapViewer.closeMenu,
+                        });
+                    }
+                    examineEntries.push({
+                        option: "Examine",
+                        targetId: npcType.id,
+                        targetType: MenuTargetType.NPC,
+                        targetName: npcType.name,
+                        targetLevel: npcType.combatLevel,
                         onClick: this.mapViewer.onExamine,
                     });
                 } else if (interactType === InteractType.NPC) {
@@ -1457,6 +1616,9 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
 
     override async cleanUp(): Promise<void> {
         super.cleanUp();
+        this.liveRenderer?.delete();
+        this.liveRenderer = undefined;
+        this.liveRendererController = undefined;
         this.mapViewer.workerPool.resetLoader(this.dataLoader);
 
         this.quadArray?.delete();

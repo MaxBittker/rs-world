@@ -31,6 +31,7 @@ import { IndexedSprite } from "../../rs/sprite/IndexedSprite";
 import { SpriteLoader } from "../../rs/sprite/SpriteLoader";
 import { TextureLoader } from "../../rs/texture/TextureLoader";
 import { Hasher } from "../../util/Hasher";
+import { EntityAnimData, EntityAnimRequest, EntityModelLoader } from "../../live/EntityModelLoader";
 import { LoadedCache } from "../Caches";
 import { NpcSpawn } from "../data/npc/NpcSpawn";
 import { ObjSpawn } from "../data/obj/ObjSpawn";
@@ -71,6 +72,10 @@ export type WorkerState = {
 
     objSpawns: ObjSpawn[];
     npcSpawns: NpcSpawn[];
+
+    // Live entities (players, npcs, spotanims); undefined for caches the live layer can't build.
+    entityModelLoader: EntityModelLoader | undefined;
+    textureIdIndexMap: Map<number, number>;
 };
 
 let workerStatePromise: Promise<WorkerState> | undefined;
@@ -152,6 +157,38 @@ async function initWorker(
 
     const mapImageCache = await caches.open("map-images");
 
+    let entityModelLoader: EntityModelLoader | undefined;
+    if (loaderFactory.getIdkTypeLoader && loaderFactory.getSpotAnimTypeLoader) {
+        entityModelLoader = new EntityModelLoader(
+            npcTypeLoader,
+            objTypeLoader,
+            loaderFactory.getIdkTypeLoader(),
+            loaderFactory.getSpotAnimTypeLoader(),
+            seqTypeLoader,
+            modelLoader,
+            textureLoader,
+            new NpcModelLoader(
+                npcTypeLoader,
+                modelLoader,
+                textureLoader,
+                seqTypeLoader,
+                seqFrameLoader,
+                skeletalSeqLoader,
+                varManager,
+            ),
+        );
+    }
+
+    // Same texture layout as SdMapDataLoader / the renderer's texture array.
+    const textureIds = textureLoader
+        .getTextureIds()
+        .filter((id) => textureLoader.isSd(id))
+        .slice(0, 2047);
+    const textureIdIndexMap = new Map<number, number>();
+    for (let i = 0; i < textureIds.length; i++) {
+        textureIdIndexMap.set(textureIds[i], i);
+    }
+
     return {
         cache,
         cacheSystem,
@@ -181,6 +218,8 @@ async function initWorker(
 
         objSpawns,
         npcSpawns,
+        entityModelLoader,
+        textureIdIndexMap,
     };
 }
 
@@ -220,6 +259,24 @@ const worker = {
             return undefined;
         }
         return Transfer<D>(data, transferables);
+    },
+    async loadEntityAnim(
+        request: EntityAnimRequest,
+    ): Promise<TransferDescriptor<EntityAnimData> | undefined> {
+        const workerState = await workerStatePromise;
+        if (!workerState) {
+            throw new Error("Worker not initialized");
+        }
+        const loader = workerState.entityModelLoader;
+        if (!loader) {
+            return undefined;
+        }
+        const data = loader.bake(request, workerState.textureIdIndexMap);
+        workerState.seqFrameLoader.clearCache();
+        if (loader.bodyCache.size > 512) {
+            loader.clearCache();
+        }
+        return Transfer(data, [data.vertices.buffer, data.indices.buffer]);
     },
     async loadTexture(
         id: number,

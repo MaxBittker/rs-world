@@ -1,0 +1,165 @@
+.live-panel {
+    position: absolute;
+    right: 10px;
+    /* above the Info button */
+    bottom: 46px;
+    width: 250px;
+    max-height: 60vh;
+    display: flex;
+    flex-direction: column;
+    font-family: "OSRS Small", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 16px;
+    color: #ff981f;
+    text-shadow: 1px 1px 0 black;
+    z-index: 2;
+}
+
+.live-panel.collapsed {
+    max-height: none;
+}
+
+.live-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px;
+    cursor: pointer;
+    font-family: "OSRS Bold", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.live-title {
+    color: #ff981f;
+}
+
+.live-host {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #9f9f9f;
+    font-family: "OSRS Small", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.live-toggle {
+    color: #ffff00;
+    width: 10px;
+    text-align: center;
+}
+
+.live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #9f1f1f;
+    box-shadow: 1px 1px 0 black;
+    flex: none;
+}
+
+.live-dot.open {
+    background: #00d000;
+}
+
+.live-dot.connecting {
+    background: #ffd000;
+}
+
+.live-error {
+    padding: 0 4px;
+    color: #ff4040;
+}
+
+.live-stats,
+.live-follow {
+    padding: 2px 4px;
+    border-top: 1px solid #3e3529;
+}
+
+.live-value {
+    color: #ffff00;
+}
+
+.live-dim {
+    color: #9f9f9f;
+}
+
+.live-sep {
+    color: #5d5447;
+    margin: 0 4px;
+}
+
+.live-name {
+    color: #ffffff;
+}
+
+.live-follow {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.live-button {
+    margin-left: auto;
+    font-family: "OSRS Small", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 16px;
+    color: #ff981f;
+    text-shadow: 1px 1px 0 black;
+    background: #3e3529;
+    border: 1px solid #5d5447;
+    padding: 0 6px;
+    cursor: pointer;
+}
+
+.live-button:hover {
+    color: #ffff00;
+}
+
+.live-search {
+    margin: 4px;
+    padding: 2px 4px;
+    font-family: "OSRS Small", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 16px;
+    color: #ffffff;
+    background: #1e1a15;
+    border: 1px solid #5d5447;
+    outline: none;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.live-players {
+    overflow-y: auto;
+    min-height: 0;
+    flex: 1;
+    padding: 0 4px 4px;
+}
+
+.live-player {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 2px;
+    cursor: pointer;
+}
+
+.live-player:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.live-player:hover .live-name {
+    color: #ffff00;
+}
+
+.live-player.followed .live-name {
+    color: #ff981f;
+}
+
+.live-more {
+    padding: 2px;
+}
+
+.live-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}

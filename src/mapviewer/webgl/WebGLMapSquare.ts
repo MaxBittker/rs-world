@@ -43,6 +43,8 @@ export class WebGLMapSquare {
 
     npcDataTextureOffsets: number[];
 
+    heightMapData?: Int16Array;
+
     static load(
         seqTypeLoader: SeqTypeLoader,
         npcTypeLoader: NpcTypeLoader,
@@ -252,7 +254,7 @@ export class WebGLMapSquare {
 
         const drawCallNpc = createDrawCall(npcProgram, undefined, drawRangesNpc);
 
-        return new WebGLMapSquare(
+        const square = new WebGLMapSquare(
             mapX,
             mapY,
 
@@ -298,6 +300,9 @@ export class WebGLMapSquare {
             locsAnimated,
             npcs,
         );
+        // Kept on the CPU so live entities can be placed on the terrain.
+        square.heightMapData = mapData.heightMapTextureData;
+        return square;
     }
 
     constructor(
@@ -361,6 +366,28 @@ export class WebGLMapSquare {
 
     getTileRenderFlag(level: number, tileX: number, tileY: number): number {
         return this.tileRenderFlags[level][tileX + this.borderSize][tileY + this.borderSize];
+    }
+
+    // Interpolated ground height (RS convention, negative is up) at a fine coord within this
+    // square, matching the client's getHeightmapY and the npc shader's getHeightInterp.
+    getHeightInterp(level: number, localFineX: number, localFineZ: number): number {
+        const data = this.heightMapData;
+        if (!data) {
+            return 0;
+        }
+        const size = Scene.MAP_SQUARE_SIZE + this.borderSize * 2;
+        const levelOffset = level * size * size;
+        const tileX = (localFineX >> 7) + this.borderSize;
+        const tileZ = (localFineZ >> 7) + this.borderSize;
+        const offsetX = localFineX & 127;
+        const offsetZ = localFineZ & 127;
+        const h00 = -data[levelOffset + tileZ * size + tileX] * 8;
+        const h10 = -data[levelOffset + tileZ * size + tileX + 1] * 8;
+        const h01 = -data[levelOffset + (tileZ + 1) * size + tileX] * 8;
+        const h11 = -data[levelOffset + (tileZ + 1) * size + tileX + 1] * 8;
+        const y0 = (h00 * (128 - offsetX) + h10 * offsetX) >> 7;
+        const y1 = (h01 * (128 - offsetX) + h11 * offsetX) >> 7;
+        return (y0 * (128 - offsetZ) + y1 * offsetZ) >> 7;
     }
 
     getMapDistance(mapX: number, mapY: number): number {

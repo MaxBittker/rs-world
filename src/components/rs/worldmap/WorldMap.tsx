@@ -66,15 +66,27 @@ const MAX_Y = 200 * 64;
 
 // TODO: Optimize by writing to 1 image
 
+// A dot drawn on the map, e.g. a live player. x/y are tile coords.
+export interface WorldMapMarker {
+    key: string;
+    x: number;
+    y: number;
+    label: string;
+    color: string;
+}
+
 export interface WorldMapProps {
     onDoubleClick: (x: number, y: number) => void;
 
     getPosition: () => Position;
     loadMapImageUrl: (mapX: number, mapY: number) => string | undefined;
+
+    getMarkers?: () => WorldMapMarker[];
+    onMarkerClick?: (marker: WorldMapMarker) => void;
 }
 
 export const WorldMap = memo(function WorldMap(props: WorldMapProps) {
-    const { getPosition, loadMapImageUrl } = props;
+    const { getPosition, loadMapImageUrl, getMarkers, onMarkerClick } = props;
 
     const [ref, { width = 0, height = 0 }] = useElementSize();
     const dragRef = useRef<HTMLDivElement>(null);
@@ -86,6 +98,7 @@ export const WorldMap = memo(function WorldMap(props: WorldMapProps) {
     const [tileSizeIndex, setTileSizeIndex] = useState(TILE_SIZES.indexOf(DEFAULT_TILE_SIZE));
 
     const [images, setImages] = useState<JSX.Element[]>([]);
+    const [markers, setMarkers] = useState<JSX.Element[]>([]);
 
     const requestRef = useRef<number | undefined>();
 
@@ -140,6 +153,34 @@ export const WorldMap = memo(function WorldMap(props: WorldMapProps) {
         }
 
         setImages(images);
+
+        if (getMarkers) {
+            const markerElements: JSX.Element[] = [];
+            const dotSize = clamp(tileSize * 2, 7, 11);
+            for (const marker of getMarkers()) {
+                const left = halfWidth + (marker.x - cameraX) * tileSize;
+                const bottom = halfHeight + (marker.y - cameraY) * tileSize;
+                if (left < -10 || bottom < -10 || left > width + 10 || bottom > height + 10) {
+                    continue;
+                }
+                markerElements.push(
+                    <div
+                        key={marker.key}
+                        className="worldmap-marker"
+                        title={marker.label}
+                        onClick={() => onMarkerClick?.(marker)}
+                        style={{
+                            left: left - dotSize / 2,
+                            bottom: bottom - dotSize / 2,
+                            width: dotSize,
+                            height: dotSize,
+                            backgroundColor: marker.color,
+                        }}
+                    />,
+                );
+            }
+            setMarkers(markerElements);
+        }
 
         requestRef.current = requestAnimationFrame(animate);
     };
@@ -317,6 +358,7 @@ export const WorldMap = memo(function WorldMap(props: WorldMapProps) {
                     title="Double click to teleport"
                     ref={dragRef}
                 ></div>
+                {markers}
             </div>
             <div className="worldmap-footer rs-border rs-background">
                 <span className="flex hide-mobile"></span>

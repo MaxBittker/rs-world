@@ -1,0 +1,80 @@
+.info-panel {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    font-family: "OSRS Small", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 16px;
+    color: #ff981f;
+    text-shadow: 1px 1px 0 black;
+    z-index: 3;
+}
+
+.info-button {
+    padding: 0 8px;
+    cursor: pointer;
+    font-family: "OSRS Bold", ui-monospace, SFMono-Regular, Menlo, monospace;
+    user-select: none;
+}
+
+.info-button:hover,
+.info-button.open {
+    color: #ffff00;
+}
+
+.info-popup {
+    width: 300px;
+    max-width: calc(100vw - 32px);
+    padding: 4px 8px 8px;
+    color: #ff981f;
+}
+
+.info-popup p {
+    margin: 6px 0;
+    line-height: 1.15;
+}
+
+.info-title {
+    display: flex;
+    justify-content: space-between;
+    font-family: "OSRS Bold", ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #ffff00;
+    border-bottom: 1px solid #3e3529;
+    padding-bottom: 2px;
+}
+
+.info-close {
+    cursor: pointer;
+    color: #ff981f;
+}
+
+.info-close:hover {
+    color: #ffff00;
+}
+
+.info-popup a {
+    color: #ffffff;
+    text-decoration: none;
+}
+
+.info-popup a:hover {
+    color: #ffff00;
+    text-decoration: underline;
+}
+
+.info-links {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-top: 1px solid #3e3529;
+    padding-top: 4px;
+}
+
+.info-label {
+    display: inline-block;
+    width: 80px;
+    color: #9f9f9f;
+}

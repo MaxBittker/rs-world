@@ -16,6 +16,7 @@ import { SeqFrameLoader } from "../rs/model/seq/SeqFrameLoader";
 import { Pathfinder } from "../rs/pathfinder/Pathfinder";
 import { TextureLoader } from "../rs/texture/TextureLoader";
 import { isTouchDevice, isWallpaperEngine } from "../util/DeviceUtil";
+import { LiveController, getDefaultFeedUrl } from "../live/LiveController";
 import { CacheList, LoadedCache } from "./Caches";
 import { Camera, CameraView, ProjectionType } from "./Camera";
 import { InputManager } from "./InputManager";
@@ -89,6 +90,13 @@ export class MapViewer {
 
     cameraSpeed: number = 1;
 
+    // Live world feed (players + npcs from an rs-sdk server). ?live=<ws url> overrides the
+    // default, ?live=off disables it.
+    liveUrl: string | undefined = getDefaultFeedUrl();
+    liveParam: string | undefined;
+    live?: LiveController;
+    followParam: string | undefined;
+
     constructor(
         readonly workerPool: RenderDataWorkerPool,
         readonly cacheList: CacheList,
@@ -129,6 +137,14 @@ export class MapViewer {
             params["cache"] = this.loadedCache.info.name;
         }
 
+        if (this.liveParam !== undefined) {
+            params["live"] = this.liveParam;
+        }
+        const followName = this.live?.followName ?? this.live?.pendingFollow;
+        if (followName) {
+            params["follow"] = followName;
+        }
+
         params["v"] = 1;
 
         return params;
@@ -146,6 +162,24 @@ export class MapViewer {
 
         if (searchParams.get("pt") === "o") {
             this.camera.projectionType = ProjectionType.ORTHO;
+        }
+
+        const live = searchParams.get("live");
+        if (live !== null) {
+            this.liveParam = live;
+            const url = live === "off" || live === "0" || live === "" ? undefined : live;
+            if (url !== this.liveUrl) {
+                this.liveUrl = url;
+                this.initLive();
+            }
+        }
+
+        const follow = searchParams.get("follow");
+        if (follow) {
+            this.followParam = follow;
+            if (this.live) {
+                this.live.pendingFollow = follow;
+            }
         }
 
         const zoom = searchParams.get("z");
@@ -205,7 +239,30 @@ export class MapViewer {
 
         this.renderer.initCache();
 
+        this.initLive();
+
         this.updateSearchParams();
+    }
+
+    initLive(): void {
+        this.live?.stop();
+        this.live = undefined;
+        // The live layer needs player kits/spotanims, only built for pre-dat2 (rs-sdk) caches.
+        if (this.liveUrl && this.loaderFactory?.getIdkTypeLoader) {
+            this.live = new LiveController(
+                this.liveUrl,
+                this.npcTypeLoader,
+                this.seqTypeLoader,
+                this.seqFrameLoader,
+                this.loaderFactory.getSpotAnimTypeLoader?.(),
+            );
+            if (this.followParam) {
+                this.live.pendingFollow = this.followParam;
+            }
+            this.live.hitmarkSprites = this.loaderFactory.getHitmarkSprites?.() ?? [];
+        }
+        // Live npcs replace the static spawn list; without a feed, fall back to it.
+        this.renderer.setLoadNpcs?.(!this.live);
     }
 
     setRenderer(renderer: MapViewerRenderer): void {

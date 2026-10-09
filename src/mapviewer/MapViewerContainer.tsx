@@ -6,7 +6,11 @@ import { RendererCanvas } from "../components/renderer/RendererCanvas";
 import { OsrsLoadingBar } from "../components/rs/loading/OsrsLoadingBar";
 import { OsrsMenu, OsrsMenuProps } from "../components/rs/menu/OsrsMenu";
 import { MinimapContainer } from "../components/rs/minimap/MinimapContainer";
+import { WorldMapMarker } from "../components/rs/worldmap/WorldMap";
 import { WorldMapModal } from "../components/rs/worldmap/WorldMapModal";
+import { InfoPanel } from "../live/InfoPanel";
+import { LiveOverlay } from "../live/LiveOverlay";
+import { LivePanel } from "../live/LivePanel";
 import { RS_TO_DEGREES } from "../rs/MathConstants";
 import { DownloadProgress } from "../rs/cache/CacheFiles";
 import { formatBytes } from "../util/BytesUtil";
@@ -18,6 +22,26 @@ import { MapViewerRenderer } from "./MapViewerRenderer";
 
 interface MapViewerContainerProps {
     mapViewer: MapViewer;
+}
+
+// Hosts the live overlay canvas (names, chat, hitsplats) above the GL canvas, under the HUD.
+function LiveOverlayCanvas({ renderer }: { renderer: MapViewerRenderer }): JSX.Element {
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const overlay: LiveOverlay | undefined = (renderer as { liveOverlay?: LiveOverlay })
+            .liveOverlay;
+        const container = ref.current;
+        if (!overlay || !container) {
+            return;
+        }
+        container.appendChild(overlay.canvas);
+        return () => {
+            overlay.canvas.remove();
+        };
+    }, [renderer]);
+
+    return <div ref={ref} className="live-overlay-container" />;
 }
 
 export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.Element {
@@ -35,6 +59,14 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
     const [menuProps, setMenuProps] = useState<OsrsMenuProps | undefined>(undefined);
 
     const requestRef = useRef<number | undefined>();
+
+    useEffect(() => {
+        if (process.env.NODE_ENV === "development") {
+            // Handy for poking at live state from the devtools console. Use the renderer's
+            // viewer: in StrictMode the app builds two viewers and the first one renders.
+            (window as any).mapViewer = renderer.mapViewer;
+        }
+    }, [renderer]);
 
     const animate = (time: DOMHighResTimeStamp) => {
         // Wait for 200ms before updating search params
@@ -87,6 +119,7 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
 
     const onMapClicked = useCallback(
         (x: number, y: number) => {
+            mapViewer.live?.unfollow();
             mapViewer.camera.pos[0] = x;
             mapViewer.camera.pos[2] = y;
             mapViewer.camera.updated = true;
@@ -104,6 +137,47 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
             y,
         };
     }, [mapViewer]);
+
+    // Live players on the world map: everyone online from the feed's roster, plus the camera.
+    const getWorldMapMarkers = useCallback((): WorldMapMarker[] => {
+        const markers: WorldMapMarker[] = [];
+        const live = mapViewer.live;
+        if (live) {
+            const followed = live.followName?.toLowerCase();
+            for (const [slot, name, x, z, level, combat] of live.world.rosterPlayers) {
+                markers.push({
+                    key: "p" + slot,
+                    x,
+                    y: z,
+                    label: `${name} (level-${combat})${level > 0 ? `, floor ${level}` : ""}`,
+                    color: name.toLowerCase() === followed ? "#ff981f" : "#ffffff",
+                });
+            }
+        }
+        markers.push({
+            key: "camera",
+            x: mapViewer.camera.getPosX(),
+            y: mapViewer.camera.getPosZ(),
+            label: "Camera",
+            color: "#00ffff",
+        });
+        return markers;
+    }, [mapViewer]);
+
+    const onWorldMapMarkerClick = useCallback(
+        (marker: WorldMapMarker) => {
+            const live = mapViewer.live;
+            if (!live || marker.key === "camera") {
+                return;
+            }
+            const entry = live.world.rosterPlayers.find((p) => "p" + p[0] === marker.key);
+            if (entry) {
+                live.goToPlayer(entry[1], mapViewer.camera);
+                closeWorldMap();
+            }
+        },
+        [mapViewer, closeWorldMap],
+    );
 
     const loadMapImageUrl = useCallback(
         (mapX: number, mapY: number) => {
@@ -135,6 +209,8 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
 
     return (
         <div className="max-height">
+            <LiveOverlayCanvas renderer={renderer} />
+
             {loadingBarOverlay}
 
             {menuProps && <OsrsMenu {...menuProps} />}
@@ -161,12 +237,16 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
                         <div className="fps-counter content-text">{fps}</div>
                         <div className="fps-counter content-text">{mapViewer.debugText}</div>
                     </div>
+                    <LivePanel mapViewer={mapViewer} />
+                    <InfoPanel />
                     <WorldMapModal
                         isOpen={isWorldMapOpen}
                         onRequestClose={closeWorldMap}
                         onDoubleClick={onMapClicked}
                         getPosition={getMapPosition}
                         loadMapImageUrl={loadMapImageUrl}
+                        getMarkers={getWorldMapMarkers}
+                        onMarkerClick={onWorldMapMarkerClick}
                     />
                 </span>
             )}
