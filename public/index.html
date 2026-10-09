@@ -2,6 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <!-- GitHub Pages can't send COOP/COEP headers; this service worker adds them so the viewer
+         gets SharedArrayBuffer. It does nothing where the host already sets them. -->
+    <script src="%PUBLIC_URL%/coi-serviceworker.js"></script>
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#000000" />

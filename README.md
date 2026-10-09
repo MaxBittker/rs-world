@@ -64,13 +64,20 @@ full hi-dpi resolution.
 
 ## Deploying
 
-`yarn build` gives a static site. Copy `caches/` to `build/caches/` and host the result with:
+Every push to `main` deploys to GitHub Pages at https://maxbittker.github.io/rs-world/
+(`.github/workflows/pages.yml`). The workflow syncs the cache from `https://rs-sdk-demo.fly.dev` and
+defaults the feed to `wss://rs-sdk-demo.fly.dev/worldfeed`. Set the `RS_SDK_SERVER` and
+`WORLD_FEED_URL` repository variables to point it elsewhere.
+
+Elsewhere, `yarn build` gives a static site. Copy `caches/` to `build/caches/` and host the result with:
 
 - `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`.
   The viewer shares cache buffers with its workers (`SharedArrayBuffer`). `public/_headers` sets
-  both on Cloudflare Pages and Netlify.
+  both on Cloudflare Pages and Netlify. Hosts that can't set headers (like GitHub Pages) fall back
+  to `public/coi-serviceworker.js`, which adds them from a service worker and reloads once.
 - `REACT_APP_WORLD_FEED_URL=wss://<server>/worldfeed` at build time, so the live layer has a default
   off localhost.
+- `PUBLIC_URL=/<path>` at build time when the site isn't served from the domain root.
 
 On the engine side, see the deployment notes in [DESIGN.md](DESIGN.md#deploying-the-feed).
 

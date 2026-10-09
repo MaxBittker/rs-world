@@ -24,3 +24,6 @@ yarn-error.log*
 
 # Deliberately minified file
 *.min.*
+
+# Vendored
+public/coi-serviceworker.js

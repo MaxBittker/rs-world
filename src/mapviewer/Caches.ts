@@ -2,7 +2,7 @@ import { CacheFiles, ProgressListener } from "../rs/cache/CacheFiles";
 import { CacheInfo, getLatestCache } from "../rs/cache/CacheInfo";
 import { CacheType, detectCacheType } from "../rs/cache/CacheType";
 
-const CACHE_PATH = "/caches/";
+const CACHE_PATH = process.env.PUBLIC_URL + "/caches/";
 
 export async function fetchCacheInfos(): Promise<CacheInfo[]> {
     const resp = await fetch(CACHE_PATH + "caches.json");
