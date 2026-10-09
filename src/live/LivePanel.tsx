@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { MapViewer } from "../mapviewer/MapViewer";
 import "./LivePanel.css";
 
+// Players are rendered 50 at a time; scrolling near the end of the list loads the next 50.
 const PAGE_SIZE = 50;
+const LOAD_MORE_MARGIN = 100;
 
 function useLiveVersion(mapViewer: MapViewer): void {
     const [, setVersion] = useState(0);
@@ -26,26 +28,48 @@ export function LivePanel({ mapViewer }: { mapViewer: MapViewer }): JSX.Element 
     useLiveVersion(mapViewer);
     const live = mapViewer.live;
     const [search, setSearch] = useState(live?.playerFilter ?? "");
-    const [page, setPage] = useState(0);
+    const [shownCount, setShownCount] = useState(PAGE_SIZE);
     const [collapsed, setCollapsed] = useState(false);
+    const listRef = useRef<HTMLDivElement>(null);
     const followedRef = useRef<HTMLDivElement>(null);
+    const scrollToFollowed = useRef(false);
 
     const players = live?.listPlayers() ?? [];
     const followed = live?.followName;
     const followedKey = followed?.toLowerCase();
     const followedIndex = players.findIndex((p) => p[1].toLowerCase() === followedKey);
 
-    // Turn to the followed player's page when they change (next/previous, or a click elsewhere).
+    const loadMoreNearEnd = () => {
+        const list = listRef.current;
+        if (
+            list &&
+            shownCount < players.length &&
+            list.scrollTop + list.clientHeight >= list.scrollHeight - LOAD_MORE_MARGIN
+        ) {
+            setShownCount((count) => count + PAGE_SIZE);
+        }
+    };
+
+    // When the followed player changes (next/previous, or a click elsewhere), load the list down
+    // to them and scroll them into view.
     useEffect(() => {
         if (followedIndex !== -1) {
-            setPage(Math.floor(followedIndex / PAGE_SIZE));
+            setShownCount((count) =>
+                Math.max(count, (Math.floor(followedIndex / PAGE_SIZE) + 1) * PAGE_SIZE),
+            );
+            scrollToFollowed.current = true;
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [followed]);
 
     useEffect(() => {
-        followedRef.current?.scrollIntoView({ block: "nearest" });
-    }, [followed, page]);
+        if (scrollToFollowed.current && followedRef.current) {
+            scrollToFollowed.current = false;
+            followedRef.current.scrollIntoView({ block: "nearest" });
+        }
+        // Also fills a list too short to scroll yet.
+        loadMoreNearEnd();
+    });
 
     if (!live) {
         return null;
@@ -54,11 +78,6 @@ export function LivePanel({ mapViewer }: { mapViewer: MapViewer }): JSX.Element 
     const { world, status, error } = live;
     const statusText =
         status === "open" ? "Live" : status === "connecting" ? "Connecting" : "Offline";
-
-    const pageCount = Math.max(1, Math.ceil(players.length / PAGE_SIZE));
-    const shownPage = Math.min(page, pageCount - 1);
-    const pageStart = shownPage * PAGE_SIZE;
-    const pagePlayers = players.slice(pageStart, pageStart + PAGE_SIZE);
 
     return (
         <div className={"live-panel rs-border rs-background" + (collapsed ? " collapsed" : "")}>
@@ -113,7 +132,10 @@ export function LivePanel({ mapViewer }: { mapViewer: MapViewer }): JSX.Element 
                         onChange={(e) => {
                             live.playerFilter = e.target.value;
                             setSearch(e.target.value);
-                            setPage(0);
+                            setShownCount(PAGE_SIZE);
+                            if (listRef.current) {
+                                listRef.current.scrollTop = 0;
+                            }
                         }}
                         onKeyDown={(e) => {
                             if (e.key === "Enter" && players.length > 0) {
@@ -122,8 +144,8 @@ export function LivePanel({ mapViewer }: { mapViewer: MapViewer }): JSX.Element 
                         }}
                     />
 
-                    <div className="live-players">
-                        {pagePlayers.map(([slot, name, x, z, level, combat]) => {
+                    <div className="live-players" ref={listRef} onScroll={loadMoreNearEnd}>
+                        {players.slice(0, shownCount).map(([slot, name, x, z, level, combat]) => {
                             const isFollowed = name.toLowerCase() === followedKey;
                             return (
                                 <div
@@ -144,30 +166,6 @@ export function LivePanel({ mapViewer }: { mapViewer: MapViewer }): JSX.Element 
                             </div>
                         )}
                     </div>
-
-                    {pageCount > 1 && (
-                        <div className="live-pager">
-                            <button
-                                className="live-button"
-                                title="Previous page"
-                                disabled={shownPage === 0}
-                                onClick={() => setPage(shownPage - 1)}
-                            >
-                                &lt;
-                            </button>
-                            <span className="live-dim">
-                                {pageStart + 1}-{pageStart + pagePlayers.length} of {players.length}
-                            </span>
-                            <button
-                                className="live-button"
-                                title="Next page"
-                                disabled={shownPage === pageCount - 1}
-                                onClick={() => setPage(shownPage + 1)}
-                            >
-                                &gt;
-                            </button>
-                        </div>
-                    )}
                 </>
             )}
         </div>

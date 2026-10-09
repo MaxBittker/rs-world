@@ -59,7 +59,7 @@ That only works if that server runs with `WORLD_FEED=true`.
 | `cx cy cz p y v=1`     | Camera position, pitch and yaw, same as osrs.world.                         |
 | `cache=<name>`         | Cache from `caches/caches.json` (default: newest, i.e. `rs-sdk-289`).       |
 
-The Live panel (bottom right) shows connection state, the online count and every player, 50 to a page. Info, under
+The Live panel (bottom right) shows connection state, the online count and every player (scroll for more). Info, under
 it, credits the original viewer and links the repos. Render settings (top right) default to one step
 brighter than the old client default and 1 rendered pixel per CSS pixel. Pick Native there for
 full hi-dpi resolution.

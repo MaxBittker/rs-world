@@ -113,8 +113,7 @@
     cursor: default;
 }
 
-.live-step,
-.live-pager {
+.live-step {
     display: flex;
     align-items: center;
     gap: 4px;
@@ -128,16 +127,6 @@
 
 .live-key {
     color: #9f9f9f;
-}
-
-.live-pager {
-    justify-content: space-between;
-    padding: 2px 4px;
-    border-top: 1px solid #3e3529;
-}
-
-.live-pager .live-button {
-    margin-left: 0;
 }
 
 .live-search {
