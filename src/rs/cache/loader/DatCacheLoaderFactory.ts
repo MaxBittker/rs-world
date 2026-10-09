@@ -1,4 +1,5 @@
 import { BasTypeLoader, DummyBasTypeLoader } from "../../config/bastype/BasTypeLoader";
+import { DatTypeLoader, TypeLoader } from "../../config/TypeLoader";
 import {
     DatFloorTypeLoader,
     FloorTypeLoader,
@@ -6,9 +7,11 @@ import {
 } from "../../config/floortype/FloorTypeLoader";
 import { DatLocTypeLoader, LocTypeLoader } from "../../config/loctype/LocTypeLoader";
 import { DatNpcTypeLoader, NpcTypeLoader } from "../../config/npctype/NpcTypeLoader";
+import { IdkType } from "../../config/idktype/IdkType";
 import { DatObjTypeLoader, ObjTypeLoader } from "../../config/objtype/ObjTypeLoader";
 import { QuestTypeLoader } from "../../config/questtype/QuestTypeLoader";
 import { DatSeqTypeLoader, SeqTypeLoader } from "../../config/seqtype/SeqTypeLoader";
+import { SpotAnimType } from "../../config/spotanimtype/SpotAnimType";
 import {
     DatVarBitTypeLoader,
     DummyVarBitTypeLoader,
@@ -111,6 +114,18 @@ export class DatCacheLoaderFactory implements CacheLoaderFactory {
 
     getBasTypeLoader(): BasTypeLoader {
         return new DummyBasTypeLoader(this.cacheInfo);
+    }
+
+    getIdkTypeLoader(): TypeLoader<IdkType> {
+        return DatTypeLoader.load(IdkType, this.cacheInfo, this.configArchive, "idk");
+    }
+
+    getHitmarkSprites(): IndexedSprite[] {
+        return loadMapSprites(this.mediaArchive, "hitmarks");
+    }
+
+    getSpotAnimTypeLoader(): TypeLoader<SpotAnimType> {
+        return DatTypeLoader.load(SpotAnimType, this.cacheInfo, this.configArchive, "spotanim");
     }
 
     getQuestTypeLoader(): QuestTypeLoader | undefined {

@@ -1,5 +1,5 @@
 {
-  "name": "rs-map-viewer",
+  "name": "rs-world",
   "version": "0.1.0",
   "private": true,
   "dependencies": {
@@ -45,6 +45,7 @@
     "lint": "prettier --write \"./**/*.{js,ts,jsx,tsx,css,md}\"",
     "prepare": "husky install",
     "download-caches": "node scripts/download-caches.js",
+    "sync-cache": "bun scripts/sync-rs-sdk-cache.ts",
     "export-textures": "npx tsx scripts/cache/export-textures.ts",
     "export-height-map": "npx tsx scripts/cache/export-height-map.ts"
   },

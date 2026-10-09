@@ -36,6 +36,10 @@ export class IdkType extends Type {
             }
         } else if (opcode === 3) {
             this.nonSelectable = true;
+        } else if (this.cacheType !== "dat2" && opcode >= 40 && opcode < 60) {
+            // Pre-dat2 caches (e.g. rev 289) store up to 10 recolors as opcodes 40-49 (from)
+            // and 50-59 (to) instead of a counted list.
+            this.decodeOldRecolor(opcode, buffer);
         } else if (opcode === 40) {
             const count = buffer.readUnsignedByte();
             this.recolorFrom = new Array<number>(count);
@@ -54,6 +58,34 @@ export class IdkType extends Type {
             }
         } else if (opcode >= 60 && opcode < 70) {
             this.ifModelIds[opcode - 60] = buffer.readUnsignedShort();
+        }
+    }
+
+    decodeOldRecolor(opcode: number, buffer: ByteBuffer): void {
+        if (!this.recolorFrom) {
+            this.recolorFrom = [];
+            this.recolorTo = [];
+        }
+        const value = buffer.readUnsignedShort();
+        if (opcode < 50) {
+            this.recolorFrom[opcode - 40] = value;
+        } else {
+            this.recolorTo[opcode - 50] = value;
+        }
+    }
+
+    override post(): void {
+        if (this.recolorFrom && this.cacheType !== "dat2") {
+            // Old clients stop at the first unset (zero) source colour.
+            let count = 0;
+            while (count < this.recolorFrom.length && this.recolorFrom[count]) {
+                count++;
+            }
+            this.recolorFrom.length = count;
+            this.recolorTo.length = count;
+            for (let i = 0; i < count; i++) {
+                this.recolorTo[i] ??= 0;
+            }
         }
     }
 }

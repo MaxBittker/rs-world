@@ -1,10 +1,13 @@
+import { TypeLoader } from "../../config/TypeLoader";
 import { BasTypeLoader } from "../../config/bastype/BasTypeLoader";
 import { FloorTypeLoader, OverlayFloorTypeLoader } from "../../config/floortype/FloorTypeLoader";
+import { IdkType } from "../../config/idktype/IdkType";
 import { LocTypeLoader } from "../../config/loctype/LocTypeLoader";
 import { NpcTypeLoader } from "../../config/npctype/NpcTypeLoader";
 import { ObjTypeLoader } from "../../config/objtype/ObjTypeLoader";
 import { QuestTypeLoader } from "../../config/questtype/QuestTypeLoader";
 import { SeqTypeLoader } from "../../config/seqtype/SeqTypeLoader";
+import { SpotAnimType } from "../../config/spotanimtype/SpotAnimType";
 import { VarBitTypeLoader } from "../../config/vartype/bit/VarBitTypeLoader";
 import { MapFileIndex } from "../../map/MapFileIndex";
 import { MapFileLoader } from "../../map/MapFileLoader";
@@ -34,6 +37,12 @@ export interface CacheLoaderFactory {
     getSeqTypeLoader(): SeqTypeLoader;
 
     getBasTypeLoader(): BasTypeLoader;
+
+    // Player bodies and spotanims, used by the live entity layer. Only implemented for caches
+    // the live layer supports.
+    getIdkTypeLoader?(): TypeLoader<IdkType>;
+    getSpotAnimTypeLoader?(): TypeLoader<SpotAnimType>;
+    getHitmarkSprites?(): IndexedSprite[];
 
     getQuestTypeLoader(): QuestTypeLoader | undefined;
 

@@ -45,6 +45,18 @@ export class SpotAnimType extends Type {
             this.ambient = buffer.readUnsignedByte();
         } else if (opcode === 8) {
             this.contrast = buffer.readUnsignedByte();
+        } else if (this.cacheType !== "dat2" && opcode >= 40 && opcode < 60) {
+            // Pre-dat2 caches store recolors as opcodes 40-49 (from) and 50-59 (to).
+            if (!this.recolorFrom) {
+                this.recolorFrom = [];
+                this.recolorTo = [];
+            }
+            const value = buffer.readUnsignedShort();
+            if (opcode < 50) {
+                this.recolorFrom[opcode - 40] = value;
+            } else {
+                this.recolorTo[opcode - 50] = value;
+            }
         } else if (opcode === 40) {
             const count = buffer.readUnsignedByte();
             this.recolorFrom = new Array<number>(count);
@@ -60,6 +72,21 @@ export class SpotAnimType extends Type {
             for (let i = 0; i < count; i++) {
                 this.retextureFrom[i] = buffer.readUnsignedShort();
                 this.retextureTo[i] = buffer.readUnsignedShort();
+            }
+        }
+    }
+
+    override post(): void {
+        if (this.recolorFrom && this.cacheType !== "dat2") {
+            // Old clients stop at the first unset (zero) source colour.
+            let count = 0;
+            while (count < this.recolorFrom.length && this.recolorFrom[count]) {
+                count++;
+            }
+            this.recolorFrom.length = count;
+            this.recolorTo.length = count;
+            for (let i = 0; i < count; i++) {
+                this.recolorTo[i] ??= 0;
             }
         }
     }

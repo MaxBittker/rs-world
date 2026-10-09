@@ -186,14 +186,14 @@ export class ObjType extends Type {
         } else if (opcode === 23) {
             this.maleModel = this.readModelId(buffer);
             if (this.cacheInfo.revision < 503) {
-                this.maleOffset = buffer.readUnsignedByte();
+                this.maleOffset = buffer.readByte();
             }
         } else if (opcode === 24) {
             this.maleModel1 = this.readModelId(buffer);
         } else if (opcode === 25) {
             this.femaleModel = this.readModelId(buffer);
             if (this.cacheInfo.revision < 503) {
-                this.femaleOffset = buffer.readUnsignedByte();
+                this.femaleOffset = buffer.readByte();
             }
         } else if (opcode === 26) {
             this.femaleModel1 = this.readModelId(buffer);
