@@ -979,7 +979,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         }
 
         if (live && this.liveRenderer) {
-            this.liveOverlay.draw(live, camera, this.getLiveGroundY, this.maxLevel);
+            this.liveOverlay.draw(live, camera, this.getLiveGroundY, this.maxLevel, renderDistance, fogDepth, this.liveRenderer.farLabels);
         }
 
         // Load new map squares

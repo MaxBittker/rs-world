@@ -4,9 +4,13 @@ import { Camera } from "../mapviewer/Camera";
 import { IndexedSprite } from "../rs/sprite/IndexedSprite";
 import { LiveController } from "./LiveController";
 import { LiveEntity, LiveNpc, LivePlayer } from "./LiveEntity";
+import { FarPlayerLabel } from "./LiveEntityRenderer";
 
-// Labels are only drawn this close to the camera (tiles), so busy areas stay readable.
+// Chat, combat and npc names are only drawn this close to the camera (tiles), so busy areas stay
+// readable. Player names go as far as players are drawn, fading into the fog with them.
 const LABEL_DISTANCE = 40;
+// The shaders' fog edge rounding (FOG_CORNER_ROUNDING), in tiles.
+const FOG_CORNER_ROUNDING = 8;
 
 // Label decluttering: screen space is split into cells; a name or chat line is only drawn if
 // its cells are free, nearest entities first. Chat may move up a line or two, like the client
@@ -37,10 +41,19 @@ type OverlayEntity = {
     head: ScreenPos;
     name?: string;
     nameColour: string;
+    nameAlpha: number;
     nameY: number;
     chatY?: number;
     combat: boolean;
     hitmarks: boolean;
+};
+
+type FarName = {
+    name: string;
+    alpha: number;
+    distance: number;
+    top: ScreenPos;
+    placed: boolean;
 };
 
 // Draws names, overhead chat, hitsplats and health bars on a 2D canvas over the GL view,
@@ -71,6 +84,9 @@ export class LiveOverlay {
         camera: Camera,
         getGroundY: (e: LiveEntity) => number | undefined,
         maxLevel: number,
+        renderDistance: number,
+        fogDepth: number,
+        farLabels: FarPlayerLabel[],
     ): void {
         const canvas = this.canvas;
         const dpr = window.devicePixelRatio || 1;
@@ -106,16 +122,16 @@ export class LiveOverlay {
             const dx = e.x / 128 - camera.getPosX();
             const dz = e.z / 128 - camera.getPosZ();
             const isFollowed = e === followed;
-            if (!isFollowed && (Math.abs(dx) > LABEL_DISTANCE || Math.abs(dz) > LABEL_DISTANCE)) {
-                continue;
-            }
+            const near = isFollowed || (Math.abs(dx) <= LABEL_DISTANCE && Math.abs(dz) <= LABEL_DISTANCE);
+            const nameAlpha = isFollowed ? 1 : getFogVisibility(dx, dz, renderDistance, fogDepth);
 
             const isPlayer = e instanceof LivePlayer;
-            const showName = isFollowed || (isPlayer ? options.showPlayerNames : options.showNpcNames);
+            const showName =
+                nameAlpha > 0 && (isFollowed || (isPlayer ? options.showPlayerNames : options.showNpcNames && near));
             // Same windows as the client: health bar for 300 cycles after a hit, hitmarks 70.
-            const combat = options.showCombat && e.combatCycle > loopCycle + 100 && e.totalHealth > 0;
-            const chat = options.showChat && e.chatMessage !== null && e.chatTimer > 0;
-            const hitmarks = options.showCombat && e.damageCycles.some((cycle) => cycle > loopCycle);
+            const combat = near && options.showCombat && e.combatCycle > loopCycle + 100 && e.totalHealth > 0;
+            const chat = near && options.showChat && e.chatMessage !== null && e.chatTimer > 0;
+            const hitmarks = near && options.showCombat && e.damageCycles.some((cycle) => cycle > loopCycle);
             if (!showName && !combat && !chat && !hitmarks) {
                 continue;
             }
@@ -139,6 +155,7 @@ export class LiveOverlay {
                 head,
                 name: showName ? (isPlayer ? e.getName() : formatNpcName(e as LiveNpc)) : undefined,
                 nameColour: isFollowed ? "#ff981f" : isPlayer ? "#ffffff" : "#ffff00",
+                nameAlpha,
                 nameY: top.y - 8,
                 chatY: chat ? head.y : undefined,
                 combat,
@@ -146,7 +163,22 @@ export class LiveOverlay {
             });
         }
 
-        // 2. Place labels: followed first, then nearest. Chat outranks names.
+        // Players drawn from the roster outside the streamed area only have a name.
+        const farNames: FarName[] = [];
+        if (options.showPlayerNames) {
+            for (const p of farLabels) {
+                const dx = p.x / 128 - camera.getPosX();
+                const dz = p.z / 128 - camera.getPosZ();
+                const alpha = getFogVisibility(dx, dz, renderDistance, fogDepth);
+                const top = alpha > 0 ? this.project(camera, p.x, p.groundY - p.height - 15, p.z, width, height) : undefined;
+                if (top) {
+                    farNames.push({ name: p.name, alpha, distance: dx * dx + dz * dz, top, placed: false });
+                }
+            }
+        }
+
+        // 2. Place labels: followed first, then nearest. Chat outranks names, and the streamed
+        // area's names outrank the roster's, which are further away.
         overlays.sort((a, b) => (a.followed ? -1 : b.followed ? 1 : a.distance - b.distance));
         this.resetGrid(width, height);
         for (const o of overlays) {
@@ -175,15 +207,27 @@ export class LiveOverlay {
                 o.name = undefined;
             }
         }
+        farNames.sort((a, b) => a.distance - b.distance);
+        for (const n of farNames) {
+            const half = this.measure("plain", n.name) / 2;
+            const y = n.top.y - 8;
+            n.placed = this.occupy(n.top.x - half, y - 12, n.top.x + half, y + 2, false);
+        }
 
         // 3. Draw back to front: names, health bars, hitmarks, then chat on top like the client.
         ctx.textAlign = "center";
         ctx.textBaseline = "alphabetic";
         ctx.font = "16px 'OSRS Small', sans-serif";
+        for (let i = farNames.length - 1; i >= 0; i--) {
+            const n = farNames[i];
+            if (n.placed) {
+                this.drawText(n.name, n.top.x, n.top.y - 8, "#ffffff", n.alpha);
+            }
+        }
         for (let i = overlays.length - 1; i >= 0; i--) {
             const o = overlays[i];
             if (o.name) {
-                this.drawText(o.name, o.top.x, o.nameY, o.nameColour);
+                this.drawText(o.name, o.top.x, o.nameY, o.nameColour, o.nameAlpha);
             }
         }
         for (let i = overlays.length - 1; i >= 0; i--) {
@@ -331,12 +375,14 @@ export class LiveOverlay {
         return this.hitmarks[type];
     }
 
-    private drawText(text: string, x: number, y: number, colour: string): void {
+    private drawText(text: string, x: number, y: number, colour: string, alpha: number = 1): void {
         const ctx = this.ctx;
+        ctx.globalAlpha = alpha;
         ctx.fillStyle = "#000000";
         ctx.fillText(text, x + 1, y + 1);
         ctx.fillStyle = colour;
         ctx.fillText(text, x, y);
+        ctx.globalAlpha = 1;
     }
 
     private project(camera: Camera, fineX: number, fineY: number, fineZ: number, width: number, height: number): ScreenPos | undefined {
@@ -356,6 +402,15 @@ export class LiveOverlay {
             y: (1 - (ndcY * 0.5 + 0.5)) * height,
         };
     }
+}
+
+// How much of a point (tiles from the camera) the fog leaves visible, 1 clear to 0 gone: the
+// shaders' rounded-box fog, 1 - fogFactorLinear(-sdRoundedBox(...), 0, fogDepth).
+function getFogVisibility(dx: number, dz: number, renderDistance: number, fogDepth: number): number {
+    const qx = Math.abs(dx) - renderDistance + FOG_CORNER_ROUNDING;
+    const qz = Math.abs(dz) - renderDistance + FOG_CORNER_ROUNDING;
+    const sd = Math.min(Math.max(qx, qz), 0) + Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) - FOG_CORNER_ROUNDING;
+    return Math.min(Math.max(-sd / fogDepth, 0), 1);
 }
 
 function formatNpcName(npc: LiveNpc): string {

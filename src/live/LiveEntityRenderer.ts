@@ -75,6 +75,16 @@ type RenderItem = {
     interactType: number;
 };
 
+// A roster player drawn this frame outside the streamed area, for the overlay to name.
+export type FarPlayerLabel = {
+    name: string;
+    x: number;
+    z: number;
+    // Ground height and model height, in fine units (negative is up).
+    groundY: number;
+    height: number;
+};
+
 export type DrawFunction = (drawCall: DrawCall, drawRanges: number[][]) => void;
 
 export class LiveEntityRenderer {
@@ -83,6 +93,7 @@ export class LiveEntityRenderer {
     pendingBakes: number = 0;
 
     items: RenderItem[] = [];
+    farLabels: FarPlayerLabel[] = [];
     // Last pose drawn per entity, held while a new appearance or anim is still baking.
     lastDrawn: WeakMap<LiveEntity, { page: EntityAnimPage; frame: number }> = new WeakMap();
     // Draw order: items grouped by page, plus where each page's run starts in the data texture.
@@ -135,6 +146,7 @@ export class LiveEntityRenderer {
 
     prepare(maxLevel: number, camera: Camera, renderDistance: number): void {
         this.items.length = 0;
+        this.farLabels.length = 0;
         this.now = performance.now();
         this.cameraX = camera.getPosX();
         this.cameraY = camera.getPosY();
@@ -314,10 +326,11 @@ export class LiveEntityRenderer {
                 continue;
             }
             const page = far.isMoving(p, t) ? walk : idle;
+            const frame = (Math.floor(loopCycle / FAR_FRAME_CYCLES) + p.slot) % page.frames.length;
             page.lastUsedAt = this.now;
             this.items.push({
                 page,
-                frame: (Math.floor(loopCycle / FAR_FRAME_CYCLES) + p.slot) % page.frames.length,
+                frame,
                 x,
                 y: ground.y,
                 z,
@@ -326,6 +339,7 @@ export class LiveEntityRenderer {
                 interactId: p.slot,
                 interactType: InteractType.LIVE_PLAYER,
             });
+            this.farLabels.push({ name: p.name, x, z, groundY: ground.y, height: page.frameHeights[frame] });
         }
     }
 
