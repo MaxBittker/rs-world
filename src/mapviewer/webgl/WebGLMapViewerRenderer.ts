@@ -845,10 +845,13 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         }
 
         this.updateLive(clientTicksElapsed);
+        this.updateRenderDistance(deltaTime);
 
         camera.update(this.app.width, this.app.height);
 
         const renderDistance = this.mapViewer.renderDistance;
+        // Fog deepens with the distance, so a far view fades out instead of ending at a wall.
+        const fogDepth = Math.max(this.fogDepth, renderDistance / 8);
 
         const mapManagerStart = performance.now();
         this.mapManager.update(camera, frameCount, renderDistance, this.mapViewer.unloadDistance);
@@ -864,7 +867,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
             .set(3, this.skyColor as Float32Array)
             .set(4, this.cameraPosUni as Float32Array)
             .set(5, renderDistance as any)
-            .set(6, this.fogDepth as any)
+            .set(6, fogDepth as any)
             .set(7, timeSec as any)
             .set(8, this.brightness as any)
             .set(9, this.colorBanding as any)
@@ -901,7 +904,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         if (live && this.liveRenderer) {
             this.liveRenderer.showPlayers = live.options.showPlayers;
             this.liveRenderer.showNpcs = live.options.showNpcs;
-            this.liveRenderer.prepare(this.maxLevel, camera.getPosX(), camera.getPosZ());
+            this.liveRenderer.prepare(this.maxLevel, camera, renderDistance);
         }
         const tickTime = performance.now() - tickStart;
 
@@ -1460,6 +1463,21 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
                     if (isPlayer) {
                         const player = live.world.players.get(interactId);
                         if (!player) {
+                            // Outside the streamed area, drawn from the roster: fly there.
+                            const far = live.world.far.players.get(interactId);
+                            if (far) {
+                                menuEntries.push({
+                                    option: "Follow",
+                                    targetId: far.slot,
+                                    targetType: MenuTargetType.PLAYER,
+                                    targetName: far.name,
+                                    targetLevel: far.combatLevel,
+                                    onClick: () => {
+                                        live.goToPlayer(far.name, this.mapViewer.camera);
+                                        this.mapViewer.closeMenu();
+                                    },
+                                });
+                            }
                             continue;
                         }
                         menuEntries.push({

@@ -9,8 +9,21 @@ import { getAxisDeadzone } from "./InputManager";
 import { MapManager, MapSquare } from "./MapManager";
 import { MapViewer } from "./MapViewer";
 
+// Automatic render distance, in tiles: base + per tile of camera height above the ground. The
+// default camera (about 24 tiles up) gets the old fixed default of 128.
+const AUTO_RENDER_DISTANCE_BASE = 48;
+const AUTO_RENDER_DISTANCE_PER_HEIGHT = 3.25;
+const AUTO_RENDER_DISTANCE_MIN = 64;
+const AUTO_RENDER_DISTANCE_MAX = 512;
+// Time constant (ms) for easing towards the target, so the fog edge doesn't jump when the
+// ground under the camera changes.
+const AUTO_RENDER_DISTANCE_EASE_MS = 250;
+
 export abstract class MapViewerRenderer<T extends MapSquare = MapSquare> extends Renderer {
     mapManager: MapManager<T>;
+
+    // Last known ground height under the camera (fine units), for when that map isn't loaded.
+    private lastCameraGroundY: number = 0;
 
     constructor(public mapViewer: MapViewer) {
         super();
@@ -207,6 +220,35 @@ export abstract class MapViewerRenderer<T extends MapSquare = MapSquare> extends
     // Ground height (fine units, negative is up) at a tile position, if that map is loaded.
     getGroundHeight(tileX: number, tileZ: number): number | undefined {
         return undefined;
+    }
+
+    // Zooming out sees further: the render distance grows with the camera's height above the
+    // ground (perspective) or with the area on screen (ortho).
+    updateRenderDistance(deltaTime: number) {
+        const mapViewer = this.mapViewer;
+        const camera = mapViewer.camera;
+        const groundY = this.getGroundHeight(camera.getPosX(), camera.getPosZ());
+        if (groundY !== undefined) {
+            this.lastCameraGroundY = groundY;
+        }
+        const height = Math.max(this.lastCameraGroundY / 128 - camera.getPosY(), 0);
+
+        let target: number;
+        if (camera.projectionType === ProjectionType.ORTHO) {
+            // Half the view is width / zoom tiles across, and the ground is stretched along the
+            // view by the tilt. The view is centred where the camera ray meets the ground.
+            const lookDown = Math.max(Math.sin(-camera.pitch * RS_TO_RADIANS), 0.25);
+            const lookAhead = (height * Math.sqrt(1 - lookDown * lookDown)) / lookDown;
+            const halfView =
+                Math.max(this.canvas.width, this.canvas.height / lookDown) / camera.orthoZoom;
+            target = halfView + lookAhead;
+        } else {
+            target = AUTO_RENDER_DISTANCE_BASE + height * AUTO_RENDER_DISTANCE_PER_HEIGHT;
+        }
+        target = clamp(target, AUTO_RENDER_DISTANCE_MIN, AUTO_RENDER_DISTANCE_MAX);
+
+        const ease = 1 - Math.exp(-deltaTime / AUTO_RENDER_DISTANCE_EASE_MS);
+        mapViewer.renderDistance += (target - mapViewer.renderDistance) * ease;
     }
 
     handleControllerInput(deltaTime: number) {

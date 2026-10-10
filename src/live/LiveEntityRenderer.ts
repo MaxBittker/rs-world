@@ -8,6 +8,7 @@ import PicoGL, {
     VertexBuffer,
 } from "picogl";
 
+import { Camera } from "../mapviewer/Camera";
 import { MapManager } from "../mapviewer/MapManager";
 import { DrawRange } from "../mapviewer/webgl/DrawRange";
 import { InteractType } from "../mapviewer/webgl/InteractType";
@@ -15,18 +16,27 @@ import { WebGLMapSquare } from "../mapviewer/webgl/WebGLMapSquare";
 import { RenderDataWorkerPool } from "../mapviewer/worker/RenderDataWorkerPool";
 import { SeqTypeLoader } from "../rs/config/seqtype/SeqTypeLoader";
 import { EntityAnimData, EntityModelSpec } from "./EntityModelLoader";
+import { FAR_PLAYER_APPEARANCE, FAR_PLAYER_MODEL_KEY } from "./FarPlayers";
 import { LiveEntity, LiveNpc, LivePlayer } from "./LiveEntity";
 import { LiveWorld } from "./LiveWorld";
 
 const MAX_PENDING_BAKES = 6;
 const MAX_INSTANCES = 4096;
 // Baked frames are cheap to rebuild, GPU memory isn't. Over budget, pages not drawn for a couple
-// of seconds are evicted (least recently drawn first), and distant players share default-colour
-// bodies so a crowd of individually-dressed players can't bake thousands of pages.
+// of seconds are evicted (least recently drawn first).
 const MAX_PAGE_BYTES = 192 * 1024 * 1024;
 const PAGE_IDLE_MS = 2000;
 const EVICT_INTERVAL_MS = 500;
-const LOD_DISTANCE_TILES = 24;
+// Detail by distance from the camera, in tiles (a player is about 15px tall at 48 on a 1000px
+// canvas), so a zoomed-out crowd bakes and draws few pages. Past DETAIL_DISTANCE players drop
+// their own colours (from 24 while GPU memory is tight). Past POSE_DISTANCE every player is the
+// same default body standing or walking, and npcs only idle.
+const DETAIL_DISTANCE = 48;
+const DETAIL_DISTANCE_LOW_MEMORY = 24;
+const POSE_DISTANCE = 96;
+// Far entities step through their walk or idle anim at this many client cycles per frame.
+const FAR_FRAME_CYCLES = 4;
+const FAR_PLAYER_SPEC: EntityModelSpec = { kind: "player", appearance: FAR_PLAYER_APPEARANCE, leftHand: -1, rightHand: -1 };
 
 // One baked (model, seq): every frame of the animation in a single vertex/index buffer.
 class EntityAnimPage {
@@ -86,9 +96,13 @@ export class LiveEntityRenderer {
     private now: number = 0;
     private lastEvictAt: number = 0;
     private cameraX: number = 0;
+    private cameraY: number = 0;
     private cameraZ: number = 0;
-    // Set while pages are near the budget: far players use shared default-colour bodies.
-    private lod: boolean = false;
+    private detailDistance: number = DETAIL_DISTANCE;
+    // Entities this frame and their squared distance from the camera, for nearest-first order.
+    private order: LiveEntity[] = [];
+    private orderDistance: Float64Array = new Float64Array(256);
+    private orderIndex: Uint32Array = new Uint32Array(256);
 
     constructor(
         readonly app: PicoApp,
@@ -119,22 +133,47 @@ export class LiveEntityRenderer {
         return { y, plane };
     }
 
-    prepare(maxLevel: number, cameraX: number, cameraZ: number): void {
+    prepare(maxLevel: number, camera: Camera, renderDistance: number): void {
         this.items.length = 0;
         this.now = performance.now();
-        this.cameraX = cameraX;
-        this.cameraZ = cameraZ;
-        this.lod = this.pageBytes > MAX_PAGE_BYTES * 0.75;
+        this.cameraX = camera.getPosX();
+        this.cameraY = camera.getPosY();
+        this.cameraZ = camera.getPosZ();
+        this.detailDistance = this.pageBytes > MAX_PAGE_BYTES * 0.75 ? DETAIL_DISTANCE_LOW_MEMORY : DETAIL_DISTANCE;
 
+        // Nearest first, so they get the bake slots and instances before the crowd behind them.
+        const order = this.order;
+        order.length = 0;
         if (this.showPlayers) {
             for (const player of this.world.players.values()) {
-                this.addEntity(player, maxLevel);
+                order.push(player);
             }
         }
         if (this.showNpcs) {
             for (const npc of this.world.npcs.values()) {
-                this.addEntity(npc, maxLevel);
+                order.push(npc);
             }
+        }
+        const count = order.length;
+        if (this.orderIndex.length < count) {
+            this.orderDistance = new Float64Array(count * 2);
+            this.orderIndex = new Uint32Array(count * 2);
+        }
+        const distance = this.orderDistance;
+        for (let i = 0; i < count; i++) {
+            const dx = order[i].x / 128 - this.cameraX;
+            const dz = order[i].z / 128 - this.cameraZ;
+            distance[i] = dx * dx + dz * dz;
+            this.orderIndex[i] = i;
+        }
+        const index = this.orderIndex.subarray(0, count).sort((a, b) => distance[a] - distance[b]);
+        for (let i = 0; i < count; i++) {
+            this.addEntity(order[index[i]], maxLevel);
+        }
+        order.length = 0;
+
+        if (this.showPlayers) {
+            this.addFarPlayers(maxLevel, renderDistance);
         }
 
         this.buildRuns();
@@ -150,52 +189,71 @@ export class LiveEntityRenderer {
         if (!ground) {
             return;
         }
+        const distance = Math.hypot(
+            e.x / 128 - this.cameraX,
+            ground.y / 128 - this.cameraY,
+            e.z / 128 - this.cameraZ,
+        );
 
         const isPlayer = e instanceof LivePlayer;
         const interactType = isPlayer ? InteractType.LIVE_PLAYER : InteractType.LIVE_NPC;
 
-        // The client shows the primary anim over movement (we skip walkmerge blending).
-        let seqId = e.secondaryAnim;
-        let frame = e.secondaryAnimFrame;
-        if (e.primaryAnim !== -1 && e.primaryAnimDelay === 0) {
-            seqId = e.primaryAnim;
-            frame = e.primaryAnimFrame;
-        }
-
-        const model = this.getModelKey(e, seqId);
-        if (model) {
-            let page = this.requestPage(model.key + "@" + seqId, model.spec, seqId);
+        let page: EntityAnimPage | undefined;
+        let frame: number;
+        if (distance >= POSE_DISTANCE) {
+            // Far away: players share the default body standing or walking (like players outside
+            // the streamed area) and npcs only idle, so a crowd draws from a few pages.
+            if (isPlayer) {
+                page = this.getFarPlayerPage(e.secondaryAnim !== e.readyanim && e.secondaryAnim !== e.turnanim);
+            } else {
+                const npcType = (e as LiveNpc).npcType.id;
+                page = this.requestPage("n" + npcType + "@" + e.readyanim, { kind: "npc", npcType }, e.readyanim);
+            }
+            frame = page ? (Math.floor(this.world.loopCycle / FAR_FRAME_CYCLES) + e.id) % page.frames.length : 0;
+        } else {
+            // The client shows the primary anim over movement (we skip walkmerge blending).
+            let seqId = e.secondaryAnim;
+            frame = e.secondaryAnimFrame;
+            if (e.primaryAnim !== -1 && e.primaryAnimDelay === 0) {
+                seqId = e.primaryAnim;
+                frame = e.primaryAnimFrame;
+            }
+            const model = this.getModelKey(e, seqId, distance);
+            if (!model) {
+                return;
+            }
+            page = this.requestPage(model.key + "@" + seqId, model.spec, seqId);
             if (!page && e.readyanim !== -1 && seqId !== e.readyanim) {
                 // Still baking: hold the idle pose instead of popping out.
-                const idle = this.getModelKey(e, e.readyanim);
+                const idle = this.getModelKey(e, e.readyanim, distance);
                 page = idle ? this.requestPage(idle.key + "@" + e.readyanim, idle.spec, e.readyanim) : undefined;
                 frame = 0;
             }
-            if (!page) {
-                // New body (e.g. just equipped something) not baked yet: keep the last pose.
-                const last = this.lastDrawn.get(e);
-                if (last && this.pages.get(last.page.key) === last.page) {
-                    page = last.page;
-                    frame = last.frame;
-                }
+        }
+        if (!page) {
+            // New body (e.g. just equipped something) not baked yet: keep the last pose.
+            const last = this.lastDrawn.get(e);
+            if (last && this.pages.get(last.page.key) === last.page) {
+                page = last.page;
+                frame = last.frame;
             }
-            if (page) {
-                frame = Math.min(Math.max(frame, 0), page.frames.length - 1);
-                page.lastUsedAt = this.now;
-                this.lastDrawn.set(e, { page, frame });
-                e.height = page.frameHeights[frame] || e.height;
-                this.items.push({
-                    page,
-                    frame,
-                    x: e.x,
-                    y: ground.y,
-                    z: e.z,
-                    yaw: e.yaw,
-                    plane: ground.plane,
-                    interactId: e.id,
-                    interactType,
-                });
-            }
+        }
+        if (page) {
+            frame = Math.min(Math.max(frame, 0), page.frames.length - 1);
+            page.lastUsedAt = this.now;
+            this.lastDrawn.set(e, { page, frame });
+            e.height = page.frameHeights[frame] || e.height;
+            this.items.push({
+                page,
+                frame,
+                x: e.x,
+                y: ground.y,
+                z: e.z,
+                yaw: e.yaw,
+                plane: ground.plane,
+                interactId: e.id,
+                interactType,
+            });
         }
 
         if (e.spotanimId !== -1 && e.spotanimFrame >= 0) {
@@ -225,8 +283,62 @@ export class LiveEntityRenderer {
         }
     }
 
+    // Online players outside the streamed area, from the roster: all share one default body
+    // that stands or walks, gliding between roster updates.
+    private addFarPlayers(maxLevel: number, renderDistance: number): void {
+        const far = this.world.far;
+        if (far.players.size === 0) {
+            return;
+        }
+        const idle = this.getFarPlayerPage(false);
+        if (!idle) {
+            return;
+        }
+        const walk = this.getFarPlayerPage(true) ?? idle;
+        const loopCycle = this.world.loopCycle;
+        const t = far.getProgress(loopCycle);
+        for (const p of far.players.values()) {
+            if (this.items.length >= MAX_INSTANCES) {
+                break;
+            }
+            if (p.level > maxLevel || this.world.players.has(p.slot)) {
+                continue;
+            }
+            const x = Math.round(p.fromX + (p.toX - p.fromX) * t);
+            const z = Math.round(p.fromZ + (p.toZ - p.fromZ) * t);
+            if (Math.abs(x / 128 - this.cameraX) > renderDistance || Math.abs(z / 128 - this.cameraZ) > renderDistance) {
+                continue;
+            }
+            const ground = this.getGroundHeight(p.level, x, z);
+            if (!ground) {
+                continue;
+            }
+            const page = far.isMoving(p, t) ? walk : idle;
+            page.lastUsedAt = this.now;
+            this.items.push({
+                page,
+                frame: (Math.floor(loopCycle / FAR_FRAME_CYCLES) + p.slot) % page.frames.length,
+                x,
+                y: ground.y,
+                z,
+                yaw: p.yaw,
+                plane: ground.plane,
+                interactId: p.slot,
+                interactType: InteractType.LIVE_PLAYER,
+            });
+        }
+    }
+
+    // The default body every far player shares, walking or standing (standing while the walk
+    // is still baking).
+    private getFarPlayerPage(walking: boolean): EntityAnimPage | undefined {
+        const seqId = walking ? FAR_PLAYER_APPEARANCE.walkAnim : FAR_PLAYER_APPEARANCE.readyAnim;
+        const page = this.requestPage("p" + FAR_PLAYER_MODEL_KEY + "@" + seqId, FAR_PLAYER_SPEC, seqId);
+        return page ?? (walking ? this.getFarPlayerPage(false) : undefined);
+    }
+
     // Which body to draw: npc type, or player appearance plus any held-item swap the seq makes.
-    private getModelKey(e: LiveEntity, seqId: number): { key: string; spec: EntityModelSpec } | undefined {
+    private getModelKey(e: LiveEntity, seqId: number, distance: number): { key: string; spec: EntityModelSpec } | undefined {
         if (e instanceof LiveNpc) {
             return { key: "n" + e.npcType.id, spec: { kind: "npc", npcType: e.npcType.id } };
         }
@@ -241,10 +353,7 @@ export class LiveEntityRenderer {
             leftHand = seq.leftHandItem;
             rightHand = seq.rightHandItem;
         }
-        const far =
-            this.lod &&
-            (Math.abs(e.x / 128 - this.cameraX) > LOD_DISTANCE_TILES ||
-                Math.abs(e.z / 128 - this.cameraZ) > LOD_DISTANCE_TILES);
+        const far = distance > this.detailDistance;
         const appearance = far ? player.lodAppearance! : player.appearance;
         const modelKey = far ? player.lodModelKey : player.modelKey;
         return {

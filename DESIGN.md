@@ -143,7 +143,15 @@ Rev 289 differs from what rs-map-viewer assumed in three decoders, all fixed rev
 ## 3. The live layer (`src/live/`)
 
 **`WorldFeedClient`** keeps one socket open, reconnects with backoff, and re-subscribes to a tile area
-around the camera (quantized to 8 tiles, radius up to 160). It connects on the first rendered frame.
+around the camera (quantized to 8 tiles). It connects on the first rendered frame.
+
+**Distance follows the zoom.** The render distance is `48 + 3.25 × camera height above the ground`
+tiles, clamped to 64–512 and eased over ~250 ms (the default camera gets ~128). In ortho it covers
+the visible ground. Fog deepens to an eighth of the distance. The streamed area's radius is the
+render distance, clamped to 32–188: 188 plus the grid padding fills the engine's 384 × 384 cap
+exactly. Seeing further than that, the area slides forward along the view (up to 94 tiles), since
+what's behind the camera is off screen. Online players outside it come from the roster (every 5
+ticks), glide between roster positions and are drawn as the shared far body below.
 
 **`LiveWorld`** is a port of the rs-sdk webclient's entity code: `ClientEntity`, `Client.moveEntity`,
 `routeMove`, `entityFace`, `entityAnim`, the player/npc info-mask handlers and `ClientPlayer.setAppearance`.
@@ -168,10 +176,19 @@ vertex/index buffer, in the map squares' vertex format, so the scene shaders' de
   players share pages.
 - **Spotanims**: lit and scaled like the client's.
 
-Pages bake on demand, at most 6 in flight. While a new page bakes, the entity holds its idle or last
-pose. Past 192 MB, pages not drawn for 2 seconds are evicted, least recently drawn first. Near that
-budget, players more than 24 tiles from the camera share a default-colour body, so a crowd of
-individually-dressed players costs a handful of pages instead of thousands.
+Pages bake on demand, at most 6 in flight, nearest entities first. While a new page bakes, the
+entity holds its idle or last pose. Past 192 MB, pages not drawn for 2 seconds are evicted, least
+recently drawn first. Detail drops with distance from the camera, so a zoomed-out crowd costs a
+handful of pages and draw calls instead of thousands:
+
+- past 48 tiles (24 near the memory budget), players share a default-colour body with their gear;
+- past 96 tiles, every player is one default body standing or walking (the same body roster
+  players outside the streamed area use), and npcs only idle.
+
+Zoomed all the way out over Lumbridge (render distance 512, ~250 streamed players, ~400 roster
+players, ~700 npcs, ~1,300 instances), that's ~190 draw runs and ~200 pages (17 MB), and the live
+layer costs ~1.3 ms of JS and ~2.5 ms of draw calls per frame on an M-series Mac. Without the
+far-body tier, the same view drew ~310 runs from ~1,000 pages (70 MB).
 
 **`LiveEntityRenderer`** draws each frame:
 

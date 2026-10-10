@@ -15,7 +15,7 @@ import { MapFileIndex, getMapSquareId } from "../rs/map/MapFileIndex";
 import { SeqFrameLoader } from "../rs/model/seq/SeqFrameLoader";
 import { Pathfinder } from "../rs/pathfinder/Pathfinder";
 import { TextureLoader } from "../rs/texture/TextureLoader";
-import { isTouchDevice, isWallpaperEngine } from "../util/DeviceUtil";
+import { isTouchDevice } from "../util/DeviceUtil";
 import { LiveController, getDefaultFeedUrl } from "../live/LiveController";
 import { LoadedCache } from "./Caches";
 import { Camera, CameraView, ProjectionType } from "./Camera";
@@ -25,8 +25,6 @@ import { MapViewerRenderer } from "./MapViewerRenderer";
 import { NpcSpawn } from "./data/npc/NpcSpawn";
 import { WebGLMapViewerRenderer } from "./webgl/WebGLMapViewerRenderer";
 import { RenderDataWorkerPool } from "./worker/RenderDataWorkerPool";
-
-const DEFAULT_RENDER_DISTANCE = isWallpaperEngine ? 512 : 128;
 
 const CACHED_MAP_IMAGE_PREFIX = "/map-images/";
 
@@ -61,8 +59,8 @@ export class MapViewer {
 
     // Settings
 
-    // Tile distance
-    renderDistance: number = DEFAULT_RENDER_DISTANCE;
+    // Tile distance. Follows the zoom: the renderer sets it every frame.
+    renderDistance: number = 128;
     // Map square distance
     unloadDistance: number = 2;
     // Map square distance

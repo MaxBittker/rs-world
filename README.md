@@ -19,6 +19,7 @@ new. See [DESIGN.md](DESIGN.md) for how it works.
   `[` and `]` (or Prev/Next in the panel) step to the previous and next player in the list.
   While following, drag (or the arrow keys) orbits the player and the wheel zooms; moving the camera
   (WASD, Q/E, right-drag) stops following. Otherwise the wheel flies the camera forward and back.
+  Zooming out sees further and streams more of the world.
 - **Pan**: right-drag slides the camera over the ground. A right click without dragging opens the menu.
 - **World map**: every online player as a dot (white, your followed player orange). Click one to fly there.
 

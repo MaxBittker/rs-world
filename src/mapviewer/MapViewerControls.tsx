@@ -237,20 +237,6 @@ export const MapViewerControls = memo(
                     },
                     { collapsed: false },
                 ),
-                Distance: folder(
-                    {
-                        Render: {
-                            value: mapViewer.renderDistance,
-                            min: 16,
-                            max: 2000,
-                            step: 16,
-                            onChange: (v: number) => {
-                                mapViewer.renderDistance = v;
-                            },
-                        },
-                    },
-                    { collapsed: false },
-                ),
                 Render: folder(
                     {
                         "Fps Limit": {

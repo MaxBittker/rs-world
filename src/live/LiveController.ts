@@ -10,9 +10,10 @@ import { LiveWorld } from "./LiveWorld";
 import { FeedStatus, WorldFeedClient } from "./WorldFeedClient";
 import { RosterPlayer } from "./protocol";
 
-// Tiles streamed around the camera; the engine caps a subscription at 384 x 384.
+// Tiles streamed around the camera; the engine caps a subscription at 384 x 384, which a radius
+// of 188 plus the grid padding fills exactly. Past that, players come from the roster instead.
 const MIN_AREA_RADIUS = 32;
-const MAX_AREA_RADIUS = 160;
+const MAX_AREA_RADIUS = 188;
 // Re-subscribe only when the camera crosses an 8-tile grid line.
 const AREA_GRID = 8;
 
@@ -90,6 +91,7 @@ export class LiveController {
         this.feed = new WorldFeedClient(url, {
             onHello: () => {
                 this.world.clear();
+                this.world.far.clear();
                 this.version++;
             },
             onTick: (tick) => {
@@ -134,9 +136,15 @@ export class LiveController {
 
         this.updateFollow(camera, getGroundY);
 
-        const radius = Math.min(Math.max(renderDistance, MIN_AREA_RADIUS), MAX_AREA_RADIUS);
-        const x0 = Math.floor((camera.getPosX() - radius) / AREA_GRID) * AREA_GRID;
-        const z0 = Math.floor((camera.getPosZ() - radius) / AREA_GRID) * AREA_GRID;
+        // Seeing further than the engine will stream: the half behind the camera is mostly off
+        // screen, so slide the area forward, up to half its size (less when looking down).
+        const radius = clamp(renderDistance, MIN_AREA_RADIUS, MAX_AREA_RADIUS);
+        const ahead = clamp(renderDistance - MAX_AREA_RADIUS, 0, MAX_AREA_RADIUS / 2) * Math.cos(camera.pitch * RS_TO_RADIANS);
+        const yaw = (camera.yaw - 1024) * RS_TO_RADIANS;
+        const centerX = camera.getPosX() - Math.sin(yaw) * ahead;
+        const centerZ = camera.getPosZ() - Math.cos(yaw) * ahead;
+        const x0 = Math.floor((centerX - radius) / AREA_GRID) * AREA_GRID;
+        const z0 = Math.floor((centerZ - radius) / AREA_GRID) * AREA_GRID;
         const size = Math.ceil((radius * 2) / AREA_GRID) * AREA_GRID + AREA_GRID;
         this.feed.setArea(x0, z0, size, size);
     }

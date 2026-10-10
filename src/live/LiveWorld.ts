@@ -4,6 +4,7 @@ import { SeqType } from "../rs/config/seqtype/SeqType";
 import { SeqTypeLoader } from "../rs/config/seqtype/SeqTypeLoader";
 import { SpotAnimType } from "../rs/config/spotanimtype/SpotAnimType";
 import { SeqFrameLoader } from "../rs/model/seq/SeqFrameLoader";
+import { FarPlayers } from "./FarPlayers";
 import {
     DIRECTION_DELTA_X,
     DIRECTION_DELTA_Z,
@@ -36,6 +37,8 @@ export class LiveWorld {
     rosterPlayers: RosterPlayer[] = [];
     rosterNpcCount: number = 0;
     rosterTick: number = -1;
+    // Roster players, for drawing those outside the streamed area.
+    far: FarPlayers = new FarPlayers();
 
     constructor(
         readonly npcTypeLoader: NpcTypeLoader,
@@ -87,6 +90,7 @@ export class LiveWorld {
         this.rosterPlayers = msg.p;
         this.rosterNpcCount = msg.npcs;
         this.rosterTick = msg.k;
+        this.far.update(msg.p, msg.k, this.loopCycle);
     }
 
     getEntity(faceIndex: number): LiveEntity | undefined {
