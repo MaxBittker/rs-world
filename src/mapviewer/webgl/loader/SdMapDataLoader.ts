@@ -3,23 +3,18 @@ import { ContourGroundInfo, LocModelLoader } from "../../../rs/config/loctype/Lo
 import { LocType } from "../../../rs/config/loctype/LocType";
 import { NpcModelLoader } from "../../../rs/config/npctype/NpcModelLoader";
 import { NpcType } from "../../../rs/config/npctype/NpcType";
-import { ObjModelLoader } from "../../../rs/config/objtype/ObjModelLoader";
 import { VarManager } from "../../../rs/config/vartype/VarManager";
-import { Model } from "../../../rs/model/Model";
 import { Scene } from "../../../rs/scene/Scene";
 import { LocEntity } from "../../../rs/scene/entity/LocEntity";
 import { TextureLoader } from "../../../rs/texture/TextureLoader";
 import { NpcSpawn, getMapNpcSpawns } from "../../data/npc/NpcSpawn";
-import { ObjSpawn, getMapObjSpawns } from "../../data/obj/ObjSpawn";
 import { loadMinimapBlob } from "../../worker/MinimapData";
 import { RenderDataLoader, RenderDataResult } from "../../worker/RenderDataLoader";
 import { WorkerState } from "../../worker/RenderDataWorker";
 import { AnimationFrames } from "../AnimationFrames";
 import { DrawRange, NULL_DRAW_RANGE, newDrawRange } from "../DrawRange";
-import { InteractType } from "../InteractType";
 import { ModelHashBuffer, getModelHash } from "../buffer/ModelHashBuffer";
 import {
-    ContourGroundType,
     DrawCommand,
     ModelFace,
     ModelMergeGroup,
@@ -51,88 +46,6 @@ function loadHeightMapTextureData(scene: Scene): Int16Array {
     }
 
     return heightMapTextureData;
-}
-
-function createObjSceneModels(
-    objModelLoader: ObjModelLoader,
-    sceneModels: SceneModel[],
-    scene: Scene,
-    borderSize: number,
-    spawns: ObjSpawn[],
-): void {
-    for (const spawn of spawns) {
-        createObjSceneModel(objModelLoader, sceneModels, scene, borderSize, spawn);
-    }
-}
-
-function createObjSceneModel(
-    objModelLoader: ObjModelLoader,
-    sceneModels: SceneModel[],
-    scene: Scene,
-    borderSize: number,
-    spawn: ObjSpawn,
-): void {
-    const objType = objModelLoader.objTypeLoader.load(spawn.id);
-    if (objType.name === "null") {
-        return;
-    }
-
-    const localX = spawn.x % 64;
-    const localY = spawn.y % 64;
-
-    const tileX = localX + borderSize;
-    const tileY = localY + borderSize;
-
-    const model = objModelLoader.getModel(spawn.id, spawn.count);
-    if (!model) {
-        return undefined;
-    }
-
-    let renderLevel = spawn.plane;
-    if (renderLevel < 3 && (scene.tileRenderFlags[1][tileX][tileY] & 0x2) === 2) {
-        renderLevel = spawn.plane + 1;
-    }
-
-    const sceneHeight = scene.getCenterHeight(renderLevel, tileX, tileY);
-
-    let heightOffset = 0;
-    const tile = scene.tiles[renderLevel][tileX][tileY];
-    if (!tile || !tile.tileModel || tile.tileModel.faces.length === 0) {
-        return undefined;
-    }
-    if (tile) {
-        for (const loc of tile.locs) {
-            if ((loc.flags & 256) === 256 && loc.entity instanceof Model) {
-                const model = loc.entity;
-                model.calculateBoundsCylinder();
-                if (model.contourHeight > heightOffset) {
-                    heightOffset = model.contourHeight;
-                }
-            }
-        }
-    }
-
-    let contourGround = ContourGroundType.CENTER_TILE;
-
-    if (heightOffset !== 0) {
-        heightOffset -= sceneHeight;
-        contourGround = ContourGroundType.NONE;
-    }
-
-    sceneModels.push({
-        model,
-        lowDetail: false,
-        forceMerge: false,
-        sceneHeight,
-        sceneX: localX * 128 + 64,
-        sceneZ: localY * 128 + 64,
-        heightOffset,
-        level: renderLevel,
-        contourGround,
-        priority: 10,
-        interactType: InteractType.OBJ,
-        interactId: spawn.id,
-    });
 }
 
 function createModelGroups(
@@ -564,7 +477,6 @@ export class SdMapDataLoader implements RenderDataLoader<SdMapLoaderInput, SdMap
             mapX,
             mapY,
             maxLevel,
-            loadObjs,
             loadNpcs,
             smoothTerrain,
             minimizeDrawCalls,
@@ -580,7 +492,6 @@ export class SdMapDataLoader implements RenderDataLoader<SdMapLoaderInput, SdMap
         const textureLoader = state.textureLoader;
 
         const locModelLoader = state.locModelLoader;
-        const objModelLoader = state.objModelLoader;
         const npcModelLoader = state.npcModelLoader;
 
         const varManager = state.varManager;
@@ -618,11 +529,6 @@ export class SdMapDataLoader implements RenderDataLoader<SdMapLoaderInput, SdMap
             sceneBuf,
             sceneLocs.locEntities,
         );
-
-        if (loadObjs) {
-            const objSpawns = getMapObjSpawns(state.objSpawns, maxLevel, mapX, mapY);
-            createObjSceneModels(objModelLoader, sceneModels, scene, borderSize, objSpawns);
-        }
 
         addSceneModels(this.modelHashBuf!, textureLoader, sceneBuf, sceneModels, minimizeDrawCalls);
 
@@ -792,7 +698,6 @@ export class SdMapDataLoader implements RenderDataLoader<SdMapLoaderInput, SdMap
                 cacheName: state.cache.info.name,
 
                 maxLevel,
-                loadObjs,
                 loadNpcs,
 
                 smoothTerrain,

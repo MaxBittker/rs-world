@@ -25,7 +25,6 @@ export interface OsrsMenuProps {
     y: number;
     entries: OsrsMenuEntry[];
     tooltip: boolean;
-    debugId: boolean;
 }
 
 function onContextMenu(e: React.MouseEvent) {
@@ -34,13 +33,7 @@ function onContextMenu(e: React.MouseEvent) {
 
 const BORDER_SIZE = 10;
 
-export function OsrsMenu({
-    x,
-    y,
-    entries,
-    tooltip,
-    debugId,
-}: OsrsMenuProps): JSX.Element | undefined {
+export function OsrsMenu({ x, y, entries, tooltip }: OsrsMenuProps): JSX.Element | undefined {
     const [realX, setX] = useState(x);
     const [realY, setY] = useState(y);
 
@@ -129,9 +122,6 @@ export function OsrsMenu({
                         {entry.targetLevel}
                         {")"}
                     </span>
-                )}
-                {debugId && entry.targetId !== -1 && (
-                    <span className="target-id">{" (Id-" + entry.targetId + ")"}</span>
                 )}
             </div>
         );

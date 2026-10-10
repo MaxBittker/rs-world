@@ -244,4 +244,3 @@ watch.
 - **Multi-npcs** (varbit transforms) take their form from the observing player's varps. A spectator
   has none, so it sees the default form.
 - **Head icons** (prayer, skull) and **player options** beyond Follow aren't drawn yet.
-- **WebGPU renderer**: the live layer is WebGL only, like the npc layer it replaces.

@@ -28,7 +28,6 @@ import { isTouchDevice, isWebGL2Supported, pixelRatio } from "../../util/DeviceU
 
 import { MapViewer } from "../MapViewer";
 import { MapViewerRenderer } from "../MapViewerRenderer";
-import { MapViewerRendererType, WEBGL } from "../MapViewerRenderers";
 import { DrawRange, NULL_DRAW_RANGE } from "./DrawRange";
 import { InteractType } from "./InteractType";
 import { Interactions } from "./Interactions";
@@ -97,8 +96,6 @@ function optimizeAssumingFlatsHaveSameFirstAndLastData(gl: WebGL2RenderingContex
 }
 
 export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
-    type: MapViewerRendererType = WEBGL;
-
     dataLoader = new SdMapDataLoader();
 
     app!: PicoApp;
@@ -171,7 +168,6 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
     msaaEnabled: boolean = false;
     fxaaEnabled: boolean = false;
 
-    loadObjs: boolean = true;
     loadNpcs: boolean = true;
 
     // State
@@ -626,18 +622,6 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
                     this.updateTextureFiltering();
                 },
             },
-            "Smooth Terrain": {
-                value: this.smoothTerrain,
-                onChange: (v: boolean) => {
-                    this.setSmoothTerrain(v);
-                },
-            },
-            "Cull Back-faces": {
-                value: this.cullBackFace,
-                onChange: (v: boolean) => {
-                    this.cullBackFace = v;
-                },
-            },
             "Anti-Aliasing": folder(
                 {
                     MSAA: {
@@ -655,23 +639,6 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
                 },
                 { collapsed: true },
             ),
-            Entity: folder(
-                {
-                    Items: {
-                        value: this.loadObjs,
-                        onChange: (v: boolean) => {
-                            this.setLoadObjs(v);
-                        },
-                    },
-                    Npcs: {
-                        value: this.loadNpcs,
-                        onChange: (v: boolean) => {
-                            this.setLoadNpcs(v);
-                        },
-                    },
-                },
-                { collapsed: true },
-            ),
         };
     }
 
@@ -684,7 +651,6 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
             mapX,
             mapY,
             maxLevel: this.maxLevel,
-            loadObjs: this.loadObjs,
             loadNpcs: this.loadNpcs,
             smoothTerrain: this.smoothTerrain,
             minimizeDrawCalls: !this.hasMultiDraw,
@@ -748,7 +714,6 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         return (
             mapData.cacheName === this.mapViewer.loadedCache.info.name &&
             mapData.maxLevel === this.maxLevel &&
-            mapData.loadObjs === this.loadObjs &&
             mapData.loadNpcs === this.loadNpcs &&
             mapData.smoothTerrain === this.smoothTerrain
         );
@@ -773,14 +738,6 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         this.skyColor[2] = b / 255;
     }
 
-    setSmoothTerrain(enabled: boolean): void {
-        const updated = this.smoothTerrain !== enabled;
-        this.smoothTerrain = enabled;
-        if (updated) {
-            this.clearMaps();
-        }
-    }
-
     setMsaa(enabled: boolean): void {
         const updated = this.msaaEnabled !== enabled;
         this.msaaEnabled = enabled;
@@ -791,14 +748,6 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
 
     setFxaa(enabled: boolean): void {
         this.fxaaEnabled = enabled;
-    }
-
-    setLoadObjs(enabled: boolean): void {
-        const updated = this.loadObjs !== enabled;
-        this.loadObjs = enabled;
-        if (updated) {
-            this.clearMaps();
-        }
     }
 
     setLoadNpcs(enabled: boolean): void {
@@ -1434,7 +1383,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
                 const interactType = this.interactBuffer[index + 2];
                 if (interactType === InteractType.LOC) {
                     const locType = this.mapViewer.locTypeLoader.load(interactId);
-                    if (locType.name === "null" && !this.mapViewer.debugId) {
+                    if (locType.name === "null") {
                         continue;
                     }
                     if (locIds.has(interactId)) {
@@ -1466,7 +1415,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
                     });
                 } else if (interactType === InteractType.OBJ) {
                     const objType = this.mapViewer.objTypeLoader.load(interactId);
-                    if (objType.name === "null" && !this.mapViewer.debugId) {
+                    if (objType.name === "null") {
                         continue;
                     }
                     if (objIds.has(interactId)) {
@@ -1528,7 +1477,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
                     }
 
                     const npc = live.world.npcs.get(interactId);
-                    if (!npc || (npc.npcType.name === "null" && !this.mapViewer.debugId)) {
+                    if (!npc || npc.npcType.name === "null") {
                         continue;
                     }
                     const npcType = npc.npcType;
@@ -1565,7 +1514,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
                         }
                         npcType = transformed;
                     }
-                    if (npcType.name === "null" && !this.mapViewer.debugId) {
+                    if (npcType.name === "null") {
                         continue;
                     }
                     if (npcIds.has(interactId)) {

@@ -10,9 +10,8 @@ import { isIos, isWallpaperEngine } from "../util/DeviceUtil";
 import { fetchCacheList, loadCacheFiles } from "./Caches";
 import { MapViewer } from "./MapViewer";
 import { MapViewerContainer } from "./MapViewerContainer";
-import { WEBGL, getAvailableRenderers } from "./MapViewerRenderers";
 import { fetchNpcSpawns, getNpcSpawnsUrl } from "./data/npc/NpcSpawn";
-import { fetchObjSpawns } from "./data/obj/ObjSpawn";
+import { WebGLMapViewerRenderer } from "./webgl/WebGLMapViewerRenderer";
 import { renderDataLoaderSerializer } from "./worker/RenderDataLoader";
 import { RenderDataWorkerPool } from "./worker/RenderDataWorkerPool";
 
@@ -39,49 +38,27 @@ function MapViewerApp() {
         const abortController = new AbortController();
 
         const load = async () => {
-            const objSpawnsPromise = fetchObjSpawns();
-
             const cacheList = await cachesPromise;
             if (!cacheList) {
                 setErrorMessage("Failed to load cache list");
                 throw new Error("No caches found");
             }
 
-            const cacheNameParam = searchParams.get("cache");
-            let cacheInfo = cacheList.latest;
-            if (cacheNameParam) {
-                const foundCache = cacheList.caches.find((cache) => cache.name === cacheNameParam);
-                if (foundCache) {
-                    cacheInfo = foundCache;
-                }
-            }
+            const cacheInfo = cacheList.latest;
 
-            const [cache, objSpawns, npcSpawns] = await Promise.all([
+            const [cache, npcSpawns] = await Promise.all([
                 loadCacheFiles(cacheInfo, abortController.signal, setDownloadProgress),
-                objSpawnsPromise,
                 fetchNpcSpawns(getNpcSpawnsUrl(cacheInfo)),
             ]);
 
             const mapImageCache = await caches.open("map-images");
 
-            const availableRenderers = getAvailableRenderers();
-            if (availableRenderers.length === 0) {
-                setErrorMessage("No renderers available");
+            if (!WebGLMapViewerRenderer.isSupported()) {
+                setErrorMessage("WebGL2 is not supported.");
                 return;
             }
 
-            // Add some way to get preferred renderer
-            const rendererType = availableRenderers[0];
-
-            const mapViewer = new MapViewer(
-                workerPool,
-                cacheList,
-                objSpawns,
-                npcSpawns,
-                mapImageCache,
-                rendererType,
-                cache,
-            );
+            const mapViewer = new MapViewer(workerPool, npcSpawns, mapImageCache, cache);
             mapViewer.applySearchParams(searchParams);
             mapViewer.init();
 

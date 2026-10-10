@@ -1,53 +1,27 @@
-import FileSaver from "file-saver";
 import { vec3 } from "gl-matrix";
 import { Leva, button, buttonGroup, folder, useControls } from "leva";
 import { ButtonGroupOpts, Schema } from "leva/dist/declarations/src/types";
 import { memo, useEffect, useState } from "react";
 
-import { DownloadProgress } from "../rs/cache/CacheFiles";
 import { isTouchDevice } from "../util/DeviceUtil";
 import { lerp, slerp } from "../util/MathUtil";
-import { loadCacheFiles } from "./Caches";
 import { CameraView, ProjectionType } from "./Camera";
 import { MapViewer } from "./MapViewer";
 import { MapViewerRenderer } from "./MapViewerRenderer";
-import {
-    MapViewerRendererType,
-    createRenderer,
-    getAvailableRenderers,
-    getRendererName,
-} from "./MapViewerRenderers";
-import { fetchNpcSpawns, getNpcSpawnsUrl } from "./data/npc/NpcSpawn";
 
 interface MapViewerControlsProps {
     renderer: MapViewerRenderer;
     hideUi: boolean;
-    setRenderer: (renderer: MapViewerRenderer) => void;
     setHideUi: (hideUi: boolean | ((hideUi: boolean) => boolean)) => void;
-    setDownloadProgress: (progress: DownloadProgress | undefined) => void;
-}
-
-enum VarType {
-    VARP = 0,
-    VARBIT = 1,
 }
 
 export const MapViewerControls = memo(
-    ({
-        renderer,
-        hideUi: hidden,
-        setRenderer,
-        setHideUi,
-        setDownloadProgress,
-    }: MapViewerControlsProps): JSX.Element => {
+    ({ renderer, hideUi: hidden, setHideUi }: MapViewerControlsProps): JSX.Element => {
         const mapViewer = renderer.mapViewer;
 
         const [projectionType, setProjectionType] = useState<ProjectionType>(
             mapViewer.camera.projectionType,
         );
-
-        const [isExportingSprites, setExportingSprites] = useState(false);
-        const [isExportingTextures, setExportingTextures] = useState(false);
 
         const positionControls = isTouchDevice
             ? "Left joystick, Drag up and down."
@@ -55,10 +29,6 @@ export const MapViewerControls = memo(
         const directionControls = isTouchDevice
             ? "Right joystick."
             : "Arrow Keys or Click and Drag. Double click for pointerlock.";
-
-        const [varType, setVarType] = useState<VarType>(VarType.VARBIT);
-        const [varId, setVarId] = useState(0);
-        const [varValue, setVarValue] = useState(0);
 
         const controlsSchema: Schema = {
             Position: { value: positionControls, editable: false },
@@ -206,11 +176,6 @@ export const MapViewerControls = memo(
             };
         }, [mapViewer, cameraPoints, animationDuration, isCameraRunning]);
 
-        const rendererOptions: Record<string, MapViewerRendererType> = {};
-        for (let v of getAvailableRenderers()) {
-            rendererOptions[getRendererName(v)] = v;
-        }
-
         const recordSchema: Schema = {
             "Add point (F3)": button(() => addPoint()),
             "Delete last point (F4)": button(() => removeLastPoint()),
@@ -238,7 +203,7 @@ export const MapViewerControls = memo(
                 Links: folder(
                     {
                         GitHub: button(() => {
-                            window.open("https://github.com/dennisdev/rs-map-viewer", "_blank");
+                            window.open("https://github.com/MaxBittker/rs-world", "_blank");
                         }),
                     },
                     { collapsed: true },
@@ -283,63 +248,11 @@ export const MapViewerControls = memo(
                                 mapViewer.renderDistance = v;
                             },
                         },
-                        Unload: {
-                            value: mapViewer.unloadDistance,
-                            min: 1,
-                            max: 30,
-                            step: 1,
-                            onChange: (v: number) => {
-                                mapViewer.unloadDistance = v;
-                            },
-                        },
-                        Lod: {
-                            value: mapViewer.lodDistance,
-                            min: 0,
-                            max: 30,
-                            step: 1,
-                            onChange: (v: number) => {
-                                mapViewer.lodDistance = v;
-                            },
-                        },
                     },
                     { collapsed: false },
                 ),
-                Cache: folder(
-                    {
-                        Version: {
-                            value: mapViewer.loadedCache.info.name,
-                            options: mapViewer.cacheList.caches.map((cache) => cache.name),
-                            onChange: async (v: string) => {
-                                const cacheInfo = mapViewer.cacheList.caches.find(
-                                    (cache) => cache.name === v,
-                                );
-                                if (v !== mapViewer.loadedCache.info.name && cacheInfo) {
-                                    const [loadedCache, npcSpawns] = await Promise.all([
-                                        loadCacheFiles(cacheInfo, undefined, setDownloadProgress),
-                                        fetchNpcSpawns(getNpcSpawnsUrl(cacheInfo)),
-                                    ]);
-                                    mapViewer.npcSpawns = npcSpawns;
-                                    mapViewer.initCache(loadedCache);
-                                    setDownloadProgress(undefined);
-                                }
-                            },
-                        },
-                    },
-                    { collapsed: true },
-                ),
                 Render: folder(
                     {
-                        Renderer: {
-                            value: renderer.type,
-                            options: rendererOptions,
-                            onChange: (v: MapViewerRendererType) => {
-                                if (renderer.type !== v) {
-                                    const renderer = createRenderer(v, mapViewer);
-                                    mapViewer.setRenderer(renderer);
-                                    setRenderer(renderer);
-                                }
-                            },
-                        },
                         "Fps Limit": {
                             value: renderer.fpsLimit,
                             min: 1,
@@ -352,47 +265,6 @@ export const MapViewerControls = memo(
                     },
                     { collapsed: true },
                 ),
-                Vars: folder(
-                    {
-                        Type: {
-                            value: varType,
-                            options: {
-                                Varplayer: VarType.VARP,
-                                Varbit: VarType.VARBIT,
-                            },
-                            onChange: setVarType,
-                        },
-                        Id: {
-                            value: varId,
-                            step: 1,
-                            onChange: setVarId,
-                        },
-                        Value: {
-                            value: varValue,
-                            step: 1,
-                            onChange: setVarValue,
-                        },
-                        Set: button(() => {
-                            const varManager = mapViewer.varManager;
-                            let updated = false;
-                            if (varType === VarType.VARP) {
-                                updated = varManager.setVarp(varId, varValue);
-                            } else {
-                                updated = varManager.setVarbit(varId, varValue);
-                            }
-                            if (updated) {
-                                mapViewer.updateVars();
-                                mapViewer.renderer.mapManager.clearMaps();
-                            }
-                        }),
-                        Clear: button(() => {
-                            mapViewer.varManager.clear();
-                            mapViewer.updateVars();
-                            mapViewer.renderer.mapManager.clearMaps();
-                        }),
-                    },
-                    { collapsed: true },
-                ),
                 Menu: folder(
                     {
                         Tooltips: {
@@ -401,73 +273,12 @@ export const MapViewerControls = memo(
                                 mapViewer.tooltips = v;
                             },
                         },
-                        "Debug Id": {
-                            value: mapViewer.debugId,
-                            onChange: (v: boolean) => {
-                                mapViewer.debugId = v;
-                            },
-                        },
                     },
                     { collapsed: true },
                 ),
                 Record: folder(recordSchema, { collapsed: true }),
-                Export: folder(
-                    {
-                        "Export Sprites": button(
-                            () => {
-                                if (isExportingSprites) {
-                                    return;
-                                }
-                                setExportingSprites(true);
-                                mapViewer.workerPool
-                                    .exportSprites()
-                                    .then((zipBlob) => {
-                                        FileSaver.saveAs(
-                                            zipBlob,
-                                            `sprites_${mapViewer.loadedCache.info.name}.zip`,
-                                        );
-                                    })
-                                    .finally(() => {
-                                        setExportingSprites(false);
-                                    });
-                            },
-                            { disabled: isExportingSprites },
-                        ),
-                        "Export Textures": button(
-                            () => {
-                                if (isExportingTextures) {
-                                    return;
-                                }
-                                setExportingTextures(true);
-                                mapViewer.workerPool
-                                    .exportTextures()
-                                    .then((zipBlob) => {
-                                        FileSaver.saveAs(
-                                            zipBlob,
-                                            `textures_${mapViewer.loadedCache.info.name}.zip`,
-                                        );
-                                    })
-                                    .finally(() => {
-                                        setExportingTextures(false);
-                                    });
-                            },
-                            { disabled: isExportingTextures },
-                        ),
-                    },
-                    { collapsed: true },
-                ),
             },
-            [
-                renderer,
-                projectionType,
-                varType,
-                varId,
-                varValue,
-                pointsControls,
-                isCameraRunning,
-                isExportingSprites,
-                isExportingTextures,
-            ],
+            [renderer, projectionType, pointsControls, isCameraRunning],
         );
 
         return (

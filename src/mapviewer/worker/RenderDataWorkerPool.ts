@@ -6,7 +6,6 @@ import { ObservablePromise } from "threads/dist/observable-promise";
 import { EntityAnimData, EntityAnimRequest } from "../../live/EntityModelLoader";
 import { LoadedCache } from "../Caches";
 import { NpcSpawn } from "../data/npc/NpcSpawn";
-import { ObjSpawn } from "../data/obj/ObjSpawn";
 import { MinimapData } from "./MinimapData";
 import { RenderDataLoader } from "./RenderDataLoader";
 import { RenderDataWorker } from "./RenderDataWorker";
@@ -31,9 +30,9 @@ export class RenderDataWorkerPool {
         readonly size: number,
     ) {}
 
-    initCache(cache: LoadedCache, objSpawns: ObjSpawn[], npcSpawns: NpcSpawn[]): void {
+    initCache(cache: LoadedCache, npcSpawns: NpcSpawn[]): void {
         for (const worker of this.workers) {
-            worker.init.then((w) => w.initCache(cache, objSpawns, npcSpawns));
+            worker.init.then((w) => w.initCache(cache, npcSpawns));
         }
     }
 
@@ -90,14 +89,6 @@ export class RenderDataWorkerPool {
 
     loadCachedMapImages(): QueuedTask<RenderDataWorkerThread, Map<number, string>> {
         return this.pool.queue((w) => w.loadCachedMapImages());
-    }
-
-    exportSprites(): QueuedTask<RenderDataWorkerThread, Blob> {
-        return this.pool.queue((w) => w.exportSpritesToZip());
-    }
-
-    exportTextures(): QueuedTask<RenderDataWorkerThread, Blob> {
-        return this.pool.queue((w) => w.exportTexturesToZip());
     }
 
     terminate(): Promise<void> {

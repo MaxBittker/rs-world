@@ -10,7 +10,6 @@ export type SdMapData = {
     cacheName: string;
 
     maxLevel: number;
-    loadObjs: boolean;
     loadNpcs: boolean;
 
     smoothTerrain: boolean;

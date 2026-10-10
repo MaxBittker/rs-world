@@ -17,14 +17,13 @@ import { Pathfinder } from "../rs/pathfinder/Pathfinder";
 import { TextureLoader } from "../rs/texture/TextureLoader";
 import { isTouchDevice, isWallpaperEngine } from "../util/DeviceUtil";
 import { LiveController, getDefaultFeedUrl } from "../live/LiveController";
-import { CacheList, LoadedCache } from "./Caches";
+import { LoadedCache } from "./Caches";
 import { Camera, CameraView, ProjectionType } from "./Camera";
 import { InputManager } from "./InputManager";
 import { MapManager } from "./MapManager";
 import { MapViewerRenderer } from "./MapViewerRenderer";
-import { MapViewerRendererType, createRenderer } from "./MapViewerRenderers";
 import { NpcSpawn } from "./data/npc/NpcSpawn";
-import { ObjSpawn } from "./data/obj/ObjSpawn";
+import { WebGLMapViewerRenderer } from "./webgl/WebGLMapViewerRenderer";
 import { RenderDataWorkerPool } from "./worker/RenderDataWorkerPool";
 
 const DEFAULT_RENDER_DISTANCE = isWallpaperEngine ? 512 : 128;
@@ -70,7 +69,6 @@ export class MapViewer {
     lodDistance: number = 3;
 
     tooltips: boolean = !isTouchDevice;
-    debugId: boolean = false;
 
     // State
     needsSearchParamUpdate: boolean = false;
@@ -99,14 +97,11 @@ export class MapViewer {
 
     constructor(
         readonly workerPool: RenderDataWorkerPool,
-        readonly cacheList: CacheList,
-        readonly objSpawns: ObjSpawn[],
         public npcSpawns: NpcSpawn[],
         readonly mapImageCache: Cache,
-        rendererType: MapViewerRendererType,
         cache: LoadedCache,
     ) {
-        this.renderer = createRenderer(rendererType, this);
+        this.renderer = new WebGLMapViewerRenderer(this);
         this.initCache(cache);
     }
 
@@ -131,10 +126,6 @@ export class MapViewer {
         if (this.camera.projectionType === ProjectionType.ORTHO) {
             params["pt"] = "o";
             params["z"] = this.camera.orthoZoom.toString();
-        }
-
-        if (this.loadedCache.info.name !== this.cacheList.latest.name) {
-            params["cache"] = this.loadedCache.info.name;
         }
 
         if (this.liveParam !== undefined) {
@@ -215,7 +206,7 @@ export class MapViewer {
         this.loadedCache = cache;
         this.cacheSystem = CacheSystem.fromFiles(cache.type, cache.files);
         this.loaderFactory = getCacheLoaderFactory(cache.info, this.cacheSystem);
-        this.workerPool.initCache(cache, this.objSpawns, this.npcSpawns);
+        this.workerPool.initCache(cache, this.npcSpawns);
         this.clearMapImageUrls();
 
         this.textureLoader = this.loaderFactory.getTextureLoader();
@@ -263,12 +254,6 @@ export class MapViewer {
         }
         // Live npcs replace the static spawn list; without a feed, fall back to it.
         this.renderer.setLoadNpcs?.(!this.live);
-    }
-
-    setRenderer(renderer: MapViewerRenderer): void {
-        this.renderer = renderer;
-        this.renderer.initCache();
-        this.resetMenu();
     }
 
     /**

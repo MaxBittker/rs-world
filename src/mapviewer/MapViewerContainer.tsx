@@ -3,7 +3,6 @@ import { Joystick } from "react-joystick-component";
 import { useSearchParams } from "react-router-dom";
 
 import { RendererCanvas } from "../components/renderer/RendererCanvas";
-import { OsrsLoadingBar } from "../components/rs/loading/OsrsLoadingBar";
 import { OsrsMenu, OsrsMenuProps } from "../components/rs/menu/OsrsMenu";
 import { MinimapContainer } from "../components/rs/minimap/MinimapContainer";
 import { WorldMapMarker } from "../components/rs/worldmap/WorldMap";
@@ -12,8 +11,6 @@ import { InfoPanel } from "../live/InfoPanel";
 import { LiveOverlay } from "../live/LiveOverlay";
 import { LivePanel } from "../live/LivePanel";
 import { RS_TO_DEGREES } from "../rs/MathConstants";
-import { DownloadProgress } from "../rs/cache/CacheFiles";
-import { formatBytes } from "../util/BytesUtil";
 import { isTouchDevice } from "../util/DeviceUtil";
 import { MapViewer } from "./MapViewer";
 import "./MapViewerContainer.css";
@@ -47,9 +44,7 @@ function LiveOverlayCanvas({ renderer }: { renderer: MapViewerRenderer }): JSX.E
 export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.Element {
     const [searchParams, setSearchParams] = useSearchParams();
 
-    const [renderer, setRenderer] = useState<MapViewerRenderer>(mapViewer.renderer);
-
-    const [downloadProgress, setDownloadProgress] = useState<DownloadProgress>();
+    const renderer = mapViewer.renderer;
 
     const [hideUi, setHideUi] = useState(false);
     const [fps, setFps] = useState(0);
@@ -90,7 +85,6 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
                 y: mapViewer.menuY,
                 tooltip: !mapViewer.menuOpen,
                 entries: mapViewer.menuEntries,
-                debugId: mapViewer.debugId,
             });
         } else {
             setMenuProps(undefined);
@@ -193,35 +187,13 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
         [mapViewer],
     );
 
-    let loadingBarOverlay: JSX.Element | undefined = undefined;
-    if (downloadProgress) {
-        const formattedCacheSize = formatBytes(downloadProgress.total);
-        const progress = ((downloadProgress.current / downloadProgress.total) * 100) | 0;
-        loadingBarOverlay = (
-            <div className="overlay-container max-height">
-                <OsrsLoadingBar
-                    text={`Downloading cache (${formattedCacheSize})`}
-                    progress={progress}
-                />
-            </div>
-        );
-    }
-
     return (
         <div className="max-height">
             <LiveOverlayCanvas renderer={renderer} />
 
-            {loadingBarOverlay}
-
             {menuProps && <OsrsMenu {...menuProps} />}
 
-            <MapViewerControls
-                renderer={renderer}
-                hideUi={hideUi}
-                setRenderer={setRenderer}
-                setHideUi={setHideUi}
-                setDownloadProgress={setDownloadProgress}
-            />
+            <MapViewerControls renderer={renderer} hideUi={hideUi} setHideUi={setHideUi} />
 
             {!hideUi && (
                 <span>

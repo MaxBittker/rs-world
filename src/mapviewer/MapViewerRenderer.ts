@@ -8,11 +8,8 @@ import { ProjectionType } from "./Camera";
 import { getAxisDeadzone } from "./InputManager";
 import { MapManager, MapSquare } from "./MapManager";
 import { MapViewer } from "./MapViewer";
-import { MapViewerRendererType } from "./MapViewerRenderers";
 
 export abstract class MapViewerRenderer<T extends MapSquare = MapSquare> extends Renderer {
-    abstract type: MapViewerRendererType;
-
     mapManager: MapManager<T>;
 
     constructor(public mapViewer: MapViewer) {
