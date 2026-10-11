@@ -65,7 +65,8 @@ brighter than the old client default and 1 rendered pixel per CSS pixel. Pick Na
 full hi-dpi resolution.
 
 iPhone and iPad browsers can load the viewer when WebGL2 is available. Touch controls use the
-two joysticks and dragging on the scene. Browsers without shared memory use one worker with
+two joysticks and dragging on the scene. On mobile, the player list and Info button sit at the
+top right, and the render settings menu is hidden. Browsers without shared memory use one worker with
 an ordinary copy of the cache; cross-origin isolation is still recommended for lower memory use.
 
 ## Deploying

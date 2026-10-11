@@ -11,7 +11,7 @@ import { InfoPanel } from "../live/InfoPanel";
 import { LiveOverlay } from "../live/LiveOverlay";
 import { LivePanel } from "../live/LivePanel";
 import { RS_TO_DEGREES } from "../rs/MathConstants";
-import { isTouchDevice } from "../util/DeviceUtil";
+import { isMobileDevice, isTouchDevice } from "../util/DeviceUtil";
 import { MapViewer } from "./MapViewer";
 import "./MapViewerContainer.css";
 import { MapViewerControls } from "./MapViewerControls";
@@ -188,7 +188,7 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
     );
 
     return (
-        <div className="max-height">
+        <div className={"map-viewer max-height" + (isMobileDevice ? " mobile" : "")}>
             <LiveOverlayCanvas renderer={renderer} />
 
             {menuProps && <OsrsMenu {...menuProps} />}
@@ -209,8 +209,10 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
                         <div className="fps-counter content-text">{fps}</div>
                         <div className="fps-counter content-text">{mapViewer.debugText}</div>
                     </div>
-                    <LivePanel mapViewer={mapViewer} />
-                    <InfoPanel />
+                    <div className="live-hud">
+                        <InfoPanel />
+                        <LivePanel mapViewer={mapViewer} />
+                    </div>
                     <WorldMapModal
                         isOpen={isWorldMapOpen}
                         onRequestClose={closeWorldMap}
@@ -224,11 +226,11 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
             )}
 
             {!hideUi && isTouchDevice && (
-                <div className="joystick-container left">
+                <div className="joystick-container left" role="group" aria-label="Move camera">
                     <Joystick
                         size={75}
-                        baseColor="#181C20"
-                        stickColor="#007BFF"
+                        baseColor="radial-gradient(circle, #3e3529, #211d17)"
+                        stickColor="radial-gradient(circle at 40% 30%, #b39b70, #6d593c)"
                         stickSize={40}
                         move={mapViewer.inputManager.onPositionJoystickMove}
                         stop={mapViewer.inputManager.onPositionJoystickStop}
@@ -236,11 +238,11 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
                 </div>
             )}
             {!hideUi && isTouchDevice && (
-                <div className="joystick-container right">
+                <div className="joystick-container right" role="group" aria-label="Turn camera">
                     <Joystick
                         size={75}
-                        baseColor="#181C20"
-                        stickColor="#007BFF"
+                        baseColor="radial-gradient(circle, #3e3529, #211d17)"
+                        stickColor="radial-gradient(circle at 40% 30%, #b39b70, #6d593c)"
                         stickSize={40}
                         move={mapViewer.inputManager.onCameraJoystickMove}
                         stop={mapViewer.inputManager.onCameraJoystickStop}

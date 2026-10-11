@@ -22,6 +22,7 @@ export function checkIos() {
 }
 
 export const isIos = checkIos();
+export const isMobileDevice = checkMobile() || isIos;
 
 export const isSharedMemorySupported =
     typeof SharedArrayBuffer !== "undefined" && window.crossOriginIsolated === true;
