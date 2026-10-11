@@ -21,6 +21,8 @@ new. See [DESIGN.md](DESIGN.md) for how it works.
   (WASD, Q/E, right-drag) stops following. Otherwise the wheel flies the camera forward and back.
   Zooming out sees further and streams more of the world.
 - **Pan**: right-drag slides the camera over the ground. A right click without dragging opens the menu.
+- **Touch**: one-finger drag rotates, two-finger drag pans and pinch zooms, like drag, right-drag and the
+  wheel. The joysticks move and rotate the camera too.
 - **World map**: every online player as a dot (white, your followed player orange). Click one to fly there.
 
 ## Running locally

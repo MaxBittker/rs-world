@@ -21,6 +21,22 @@ export function getAxisDeadzone(axis: number, zone: number): number {
 // Pixels a right press can move and still count as a click (opening the menu) rather than a pan.
 const PAN_CLICK_THRESHOLD = 4;
 
+// Wheel pixels per e-fold of pinch spread. Wheel zoom scales by exp(0.0015 per pixel) in ortho and
+// while following, so there the view tracks the fingers.
+const PINCH_WHEEL_PIXELS = 1 / 0.0015;
+
+function getTouchMidpoint(container: HTMLElement, touches: TouchList): vec2 {
+    const [x0, y0] = getMousePos(container, touches[0]);
+    const [x1, y1] = getMousePos(container, touches[1]);
+    return [(x0 + x1) / 2, (y0 + y1) / 2];
+}
+
+function getTouchDistance(touches: TouchList): number {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.max(Math.hypot(dx, dy), 1);
+}
+
 export class InputManager {
     element?: HTMLElement;
 
@@ -48,7 +64,9 @@ export class InputManager {
     private panStartY: number = -1;
     private panMoved: boolean = false;
 
-    isTouch: boolean = false;
+    // Touch mirrors the mouse: one finger drags like the left button, two fingers pan like a right
+    // drag and pinch like the wheel. Finger spread at the last touch event, -1 with under two fingers.
+    private pinchDistance: number = -1;
 
     pickX: number = -1;
     pickY: number = -1;
@@ -269,7 +287,6 @@ export class InputManager {
             this.deltaMouseX -= event.movementX;
             this.deltaMouseY -= event.movementY;
         }
-        this.isTouch = false;
     };
 
     private onMouseUp = (event: MouseEvent) => {
@@ -291,15 +308,7 @@ export class InputManager {
 
     private onTouchStart = (event: TouchEvent) => {
         event.preventDefault();
-        if (!this.element) {
-            return;
-        }
-        const [x, y] = getMousePos(this.element, event.touches[0]);
-        this.dragX = x;
-        this.dragY = y;
-        this.mouseX = x;
-        this.mouseY = y;
-        this.isTouch = true;
+        this.startTouchGesture(event.touches);
     };
 
     private onTouchMove = (event: TouchEvent) => {
@@ -307,15 +316,46 @@ export class InputManager {
         if (!this.element) {
             return;
         }
-        const [x, y] = getMousePos(this.element, event.touches[0]);
-        this.mouseX = x;
-        this.mouseY = y;
+        const touches = event.touches;
+        if (touches.length >= 2) {
+            [this.mouseX, this.mouseY] = getTouchMidpoint(this.element, touches);
+            const distance = getTouchDistance(touches);
+            if (this.pinchDistance !== -1) {
+                // Spreading the fingers zooms in, as scrolling the wheel away from you does.
+                this.wheelDelta += Math.log(this.pinchDistance / distance) * PINCH_WHEEL_PIXELS;
+            }
+            this.pinchDistance = distance;
+        } else if (touches.length === 1) {
+            [this.mouseX, this.mouseY] = getMousePos(this.element, touches[0]);
+        }
     };
 
     private onTouchEnd = (event: TouchEvent) => {
+        // Carry on with the fingers still down, from where they are, so the camera doesn't jump.
+        this.startTouchGesture(event.touches);
+    };
+
+    private startTouchGesture(touches: TouchList) {
         this.dragX = -1;
         this.dragY = -1;
-    };
+        this.panX = -1;
+        this.panY = -1;
+        this.pinchDistance = -1;
+        if (!this.element || touches.length === 0) {
+            return;
+        }
+        if (touches.length === 1) {
+            [this.mouseX, this.mouseY] = getMousePos(this.element, touches[0]);
+            this.dragX = this.mouseX;
+            this.dragY = this.mouseY;
+        } else {
+            [this.mouseX, this.mouseY] = getTouchMidpoint(this.element, touches);
+            this.panX = this.mouseX;
+            this.panY = this.mouseY;
+            this.panMoved = true;
+            this.pinchDistance = getTouchDistance(touches);
+        }
+    }
 
     private onContextMenu = (event: MouseEvent) => {
         // The menu opens on right button release instead (see onMouseUp), so a drag can pan.
@@ -357,7 +397,7 @@ export class InputManager {
         for (const key of this.keys.keys()) {
             this.keys.set(key, false);
         }
-        if (this.isDragging() && !this.isTouch) {
+        if (this.isDragging()) {
             this.dragX = this.mouseX;
             this.dragY = this.mouseY;
         }

@@ -183,12 +183,8 @@ export abstract class MapViewerRenderer<T extends MapSquare = MapSquare> extends
         const deltaMouseY = inputManager.getDeltaMouseY();
 
         if (deltaMouseX !== 0 || deltaMouseY !== 0) {
-            if (inputManager.isTouch) {
-                camera.move(0, clamp(-deltaMouseY, -100, 100) * 0.004, 0);
-            } else {
-                camera.updatePitch(camera.pitch, deltaMouseY * 0.9);
-                camera.updateYaw(camera.yaw, deltaMouseX * -0.9);
-            }
+            camera.updatePitch(camera.pitch, deltaMouseY * 0.9);
+            camera.updateYaw(camera.yaw, deltaMouseX * -0.9);
         }
 
         const panX = inputManager.getPanDeltaX();
