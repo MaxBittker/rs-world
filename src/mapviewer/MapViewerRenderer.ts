@@ -301,25 +301,14 @@ export abstract class MapViewerRenderer<T extends MapSquare = MapSquare> extends
         const inputManager = this.mapViewer.inputManager;
         const camera = this.mapViewer.camera;
 
-        const deltaPitch = 64 * 5 * deltaTimeSec;
-        const deltaYaw = 64 * 5 * deltaTimeSec;
-
         // joystick controls
         const positionJoystickEvent = inputManager.positionJoystickEvent;
-        const cameraJoystickEvent = inputManager.cameraJoystickEvent;
 
         if (positionJoystickEvent) {
             const moveX = positionJoystickEvent.x ?? 0;
             const moveY = positionJoystickEvent.y ?? 0;
 
             camera.move(moveX * 32 * -deltaTimeSec, 0, moveY * 32 * -deltaTimeSec);
-        }
-
-        if (cameraJoystickEvent) {
-            const moveX = cameraJoystickEvent.x ?? 0;
-            const moveY = cameraJoystickEvent.y ?? 0;
-            camera.updatePitch(camera.pitch, deltaPitch * 1.5 * moveY);
-            camera.updateYaw(camera.yaw, deltaYaw * 1.5 * moveX);
         }
     }
 

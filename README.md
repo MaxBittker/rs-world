@@ -22,7 +22,7 @@ new. See [DESIGN.md](DESIGN.md) for how it works.
   Zooming out sees further and streams more of the world.
 - **Pan**: right-drag slides the camera over the ground. A right click without dragging opens the menu.
 - **Touch**: one-finger drag rotates, two-finger drag pans and pinch zooms, like drag, right-drag and the
-  wheel. The joysticks move and rotate the camera too.
+  wheel. The joystick at the bottom left moves the camera too.
 - **World map**: every online player as a dot (white, your followed player orange). Click one to fly there.
 
 ## Running locally
@@ -67,7 +67,7 @@ brighter than the old client default and 1 rendered pixel per CSS pixel. Pick Na
 full hi-dpi resolution.
 
 iPhone and iPad browsers can load the viewer when WebGL2 is available. Touch controls use the
-two joysticks and dragging on the scene. On mobile, the player list and Info button sit at the
+joystick and gestures on the scene (see Touch above). On mobile, the player list and Info button sit at the
 top right, and the render settings menu is hidden. Browsers without shared memory use one worker with
 an ordinary copy of the cache; cross-origin isolation is still recommended for lower memory use.
 

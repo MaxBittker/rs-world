@@ -72,7 +72,6 @@ export class InputManager {
     pickY: number = -1;
 
     positionJoystickEvent?: IJoystickUpdateEvent;
-    cameraJoystickEvent?: IJoystickUpdateEvent;
 
     gamepadIndex?: number;
 
@@ -368,14 +367,6 @@ export class InputManager {
 
     onPositionJoystickStop = (event: IJoystickUpdateEvent) => {
         this.positionJoystickEvent = undefined;
-    };
-
-    onCameraJoystickMove = (event: IJoystickUpdateEvent) => {
-        this.cameraJoystickEvent = event;
-    };
-
-    onCameraJoystickStop = (event: IJoystickUpdateEvent) => {
-        this.cameraJoystickEvent = undefined;
     };
 
     private onFocusOut = () => {

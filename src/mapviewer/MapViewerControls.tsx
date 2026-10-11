@@ -24,10 +24,10 @@ export const MapViewerControls = memo(
         );
 
         const positionControls = isTouchDevice
-            ? "Left joystick, Drag up and down."
+            ? "Joystick, two-finger drag, or pinch to zoom."
             : "WASD,\nR or E (up),\nF or C (down),\nUse SHIFT to go faster, or TAB to go slower.";
         const directionControls = isTouchDevice
-            ? "Right joystick."
+            ? "Drag with one finger."
             : "Arrow Keys or Click and Drag. Double click for pointerlock.";
 
         const controlsSchema: Schema = {
