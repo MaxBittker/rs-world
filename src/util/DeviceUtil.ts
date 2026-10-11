@@ -23,6 +23,9 @@ export function checkIos() {
 
 export const isIos = checkIos();
 
+export const isSharedMemorySupported =
+    typeof SharedArrayBuffer !== "undefined" && window.crossOriginIsolated === true;
+
 export const isWallpaperEngine = !!window.wallpaperRegisterAudioListener;
 
 export const isTouchDevice = !!(

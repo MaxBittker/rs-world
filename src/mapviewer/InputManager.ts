@@ -77,9 +77,10 @@ export class InputManager {
         element.addEventListener("mouseup", this.onMouseUp);
         element.addEventListener("mouseleave", this.onMouseLeave);
 
-        element.addEventListener("touchstart", this.onTouchStart);
-        element.addEventListener("touchmove", this.onTouchMove);
+        element.addEventListener("touchstart", this.onTouchStart, { passive: false });
+        element.addEventListener("touchmove", this.onTouchMove, { passive: false });
         element.addEventListener("touchend", this.onTouchEnd);
+        element.addEventListener("touchcancel", this.onTouchEnd);
 
         element.addEventListener("contextmenu", this.onContextMenu);
 
@@ -109,6 +110,7 @@ export class InputManager {
         this.element.removeEventListener("touchstart", this.onTouchStart);
         this.element.removeEventListener("touchmove", this.onTouchMove);
         this.element.removeEventListener("touchend", this.onTouchEnd);
+        this.element.removeEventListener("touchcancel", this.onTouchEnd);
 
         this.element.removeEventListener("contextmenu", this.onContextMenu);
 
@@ -212,7 +214,7 @@ export class InputManager {
 
     private onDoubleClick = (event: MouseEvent) => {
         if (!document.pointerLockElement && this.element) {
-            this.element.requestPointerLock();
+            this.element.requestPointerLock?.();
         }
     };
 
@@ -288,6 +290,7 @@ export class InputManager {
     };
 
     private onTouchStart = (event: TouchEvent) => {
+        event.preventDefault();
         if (!this.element) {
             return;
         }
@@ -300,6 +303,7 @@ export class InputManager {
     };
 
     private onTouchMove = (event: TouchEvent) => {
+        event.preventDefault();
         if (!this.element) {
             return;
         }

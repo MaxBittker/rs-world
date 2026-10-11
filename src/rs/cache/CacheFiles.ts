@@ -180,7 +180,9 @@ export type ProgressListener = (progress: DownloadProgress) => void;
 function ReadableBufferStream(ab: ArrayBuffer): ReadableStream<Uint8Array> {
     return new ReadableStream({
         start(controller) {
-            controller.enqueue(new Uint8Array(ab));
+            const bytes = new Uint8Array(ab);
+            // Fetch/Cache response bodies cannot consume shared-backed views in WebKit.
+            controller.enqueue(ab instanceof ArrayBuffer ? bytes : bytes.slice());
             controller.close();
         },
     });

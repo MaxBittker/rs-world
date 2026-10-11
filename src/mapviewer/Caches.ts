@@ -1,6 +1,7 @@
 import { CacheFiles, ProgressListener } from "../rs/cache/CacheFiles";
 import { CacheInfo, getLatestCache } from "../rs/cache/CacheInfo";
 import { CacheType, detectCacheType } from "../rs/cache/CacheType";
+import { isSharedMemorySupported } from "../util/DeviceUtil";
 
 const CACHE_PATH = process.env.PUBLIC_URL + "/caches/";
 
@@ -47,7 +48,7 @@ export async function loadCacheFiles(
         cacheType,
         cachePath,
         info.name,
-        true,
+        isSharedMemorySupported,
         signal,
         progressListener,
     );

@@ -125,6 +125,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
 
     // Framebuffers
     needsFramebufferUpdate: boolean = false;
+    private needsFramebufferResize: boolean = true;
 
     colorTarget?: Renderbuffer;
     interactTarget?: Renderbuffer;
@@ -770,6 +771,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
 
     override onResize(width: number, height: number): void {
         this.app.resize(width, height);
+        this.needsFramebufferResize = true;
     }
 
     override render(time: number, deltaTime: number, resized: boolean): void {
@@ -814,13 +816,15 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
             return;
         }
 
-        if (resized) {
+        // Shader compilation can postpone rendering past the frame that resized the canvas.
+        if (resized || this.needsFramebufferResize) {
             this.framebuffer.resize();
             this.textureFramebuffer.resize();
             this.interactFramebuffer.resize();
 
             this.resolutionUni[0] = this.app.width;
             this.resolutionUni[1] = this.app.height;
+            this.needsFramebufferResize = false;
         }
 
         const inputManager = this.mapViewer.inputManager;

@@ -64,6 +64,10 @@ it, credits the original viewer and links the repos. Render settings (top right)
 brighter than the old client default and 1 rendered pixel per CSS pixel. Pick Native there for
 full hi-dpi resolution.
 
+iPhone and iPad browsers can load the viewer when WebGL2 is available. Touch controls use the
+two joysticks and dragging on the scene. Browsers without shared memory use one worker with
+an ordinary copy of the cache; cross-origin isolation is still recommended for lower memory use.
+
 ## Deploying
 
 Every push to `main` deploys to GitHub Pages at https://maxbittker.github.io/rs-world/
@@ -74,7 +78,8 @@ defaults the feed to `wss://rs-sdk-demo.fly.dev/worldfeed`. Set the `RS_SDK_SERV
 Elsewhere, `yarn build` gives a static site. Copy `caches/` to `build/caches/` and host the result with:
 
 - `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`.
-  The viewer shares cache buffers with its workers (`SharedArrayBuffer`). `public/_headers` sets
+  The viewer shares cache buffers with its workers (`SharedArrayBuffer`) when available, and
+  otherwise uses ordinary buffers with one worker. `public/_headers` sets
   both on Cloudflare Pages and Netlify. Hosts that can't set headers (like GitHub Pages) fall back
   to `public/coi-serviceworker.js`, which adds them from a service worker and reloads once.
 - `REACT_APP_WORLD_FEED_URL=wss://<server>/worldfeed` at build time, so the live layer has a default

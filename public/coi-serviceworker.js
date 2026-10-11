@@ -64,7 +64,8 @@ if (typeof window === 'undefined') {
         const coi = {
             shouldRegister: () => true,
             shouldDeregister: () => false,
-            coepCredentialless: () => !(window.chrome || window.netscape),
+            // require-corp also works in Safari versions without credentialless support.
+            coepCredentialless: () => false,
             doReload: () => window.location.reload(),
             quiet: false,
             ...window.coi

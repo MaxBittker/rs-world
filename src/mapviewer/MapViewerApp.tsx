@@ -6,7 +6,7 @@ import WebFont from "webfontloader";
 import { OsrsLoadingBar } from "../components/rs/loading/OsrsLoadingBar";
 import { DownloadProgress } from "../rs/cache/CacheFiles";
 import { formatBytes } from "../util/BytesUtil";
-import { isIos, isWallpaperEngine } from "../util/DeviceUtil";
+import { isSharedMemorySupported, isTouchDevice, isWallpaperEngine } from "../util/DeviceUtil";
 import { fetchCacheList, loadCacheFiles } from "./Caches";
 import { MapViewer } from "./MapViewer";
 import { MapViewerContainer } from "./MapViewerContainer";
@@ -25,7 +25,10 @@ WebFont.load({
 
 const cachesPromise = fetchCacheList();
 
-const workerPool = RenderDataWorkerPool.create(isWallpaperEngine ? 1 : 4);
+// Without shared memory each worker receives its own copy of the cache.
+const workerPool = RenderDataWorkerPool.create(
+    isWallpaperEngine || !isSharedMemorySupported ? 1 : isTouchDevice ? 2 : 4,
+);
 
 function MapViewerApp() {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -38,6 +41,11 @@ function MapViewerApp() {
         const abortController = new AbortController();
 
         const load = async () => {
+            if (!WebGLMapViewerRenderer.isSupported()) {
+                setErrorMessage("WebGL2 is not supported. Please update your browser or OS.");
+                return;
+            }
+
             const cacheList = await cachesPromise;
             if (!cacheList) {
                 setErrorMessage("Failed to load cache list");
@@ -53,11 +61,6 @@ function MapViewerApp() {
 
             const mapImageCache = await caches.open("map-images");
 
-            if (!WebGLMapViewerRenderer.isSupported()) {
-                setErrorMessage("WebGL2 is not supported.");
-                return;
-            }
-
             const mapViewer = new MapViewer(workerPool, npcSpawns, mapImageCache, cache);
             mapViewer.applySearchParams(searchParams);
             mapViewer.init();
@@ -66,11 +69,16 @@ function MapViewerApp() {
             setMapViewer(mapViewer);
         };
 
-        if (isIos) {
-            setErrorMessage("iOS is not supported.");
-        } else {
-            load().catch(console.error);
-        }
+        load().catch((error: unknown) => {
+            if (abortController.signal.aborted) {
+                return;
+            }
+            console.error(error);
+            setDownloadProgress(undefined);
+            setErrorMessage(
+                error instanceof Error ? error.message : "Failed to load the world. Please reload.",
+            );
+        });
 
         return () => {
             abortController.abort();
