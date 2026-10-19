@@ -85,6 +85,15 @@ export function LivePanel({ mapViewer }: { mapViewer: MapViewer }): JSX.Element 
                 <span className={"live-dot " + status} />
                 <span className="live-title">{statusText}</span>
                 <span className="live-host">{formatHost(live.url)}</span>
+                <button
+                    className="live-button live-reconnect"
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        live.reconnect();
+                    }}
+                >
+                    Reconnect
+                </button>
                 <span className="live-toggle">{collapsed ? "+" : "-"}</span>
             </div>
 

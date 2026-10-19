@@ -104,6 +104,11 @@
     cursor: pointer;
 }
 
+.live-reconnect {
+    margin-left: 0;
+    flex: none;
+}
+
 .live-button:hover:not(:disabled) {
     color: #ffff00;
 }

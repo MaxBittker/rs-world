@@ -116,6 +116,10 @@ export class LiveController {
         this.world.clear();
     }
 
+    reconnect(): void {
+        this.feed.reconnect();
+    }
+
     // Called once per rendered frame with the 20ms client cycles that elapsed.
     update(clientCycles: number, camera: Camera, renderDistance: number, getGroundY: (e: LiveEntity) => number | undefined): void {
         // Connect on the first rendered frame, so viewers that never render never connect.

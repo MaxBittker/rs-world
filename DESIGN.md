@@ -105,7 +105,8 @@ Other safeguards:
 | --- | --- | --- |
 | `WORLD_FEED` | `false` | `true` serves `ws(s)://<host>/worldfeed` on the public web port |
 | `WORLD_FEED_TOKEN` | empty | if set, connections need `?token=` |
-| `WORLD_FEED_MAX_CLIENTS` | `32` | extra connections get 503 |
+| `WORLD_FEED_MAX_CLIENTS` | `128` | extra connections get 503 |
+| `WORLD_FEED_IDLE_TIMEOUT_MS` | `120000` | connections without a client message expire; this viewer sends a 30-second heartbeat |
 
 Privacy is in line with what the server already exposes:
 
@@ -142,8 +143,9 @@ Rev 289 differs from what rs-map-viewer assumed in three decoders, all fixed rev
 
 ## 3. The live layer (`src/live/`)
 
-**`WorldFeedClient`** keeps one socket open, reconnects with backoff, and re-subscribes to a tile area
-around the camera (quantized to 8 tiles). It connects on the first rendered frame.
+**`WorldFeedClient`** keeps one socket open, sends a 30-second heartbeat, reconnects with backoff,
+and re-subscribes to a tile area around the camera (quantized to 8 tiles). The live panel always
+offers a manual reconnect button. It connects on the first rendered frame.
 
 **Distance follows the zoom.** The render distance is `48 + 3.25 × camera height above the ground`
 tiles, clamped to 64–512 and eased over ~250 ms (the default camera gets ~128). In ortho it covers

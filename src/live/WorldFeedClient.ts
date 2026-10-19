@@ -12,6 +12,7 @@ export type WorldFeedHandlers = {
 type Area = { x: number; z: number; w: number; h: number };
 
 const MAX_RECONNECT_DELAY_MS = 15_000;
+const HEARTBEAT_INTERVAL_MS = 30_000;
 
 // Keeps one WebSocket to the engine's /worldfeed open, re-subscribing after reconnects.
 export class WorldFeedClient {
@@ -28,6 +29,7 @@ export class WorldFeedClient {
 
     private reconnectDelay = 1000;
     private reconnectTimer?: ReturnType<typeof setTimeout>;
+    private heartbeatTimer?: ReturnType<typeof setInterval>;
     private stopped = false;
 
     constructor(
@@ -43,9 +45,25 @@ export class WorldFeedClient {
     close(): void {
         this.stopped = true;
         clearTimeout(this.reconnectTimer);
+        clearInterval(this.heartbeatTimer);
         this.ws?.close();
         this.ws = undefined;
         this.setStatus("closed");
+    }
+
+    reconnect(): void {
+        this.stopped = true;
+        clearTimeout(this.reconnectTimer);
+        clearInterval(this.heartbeatTimer);
+        const previous = this.ws;
+        this.ws = undefined;
+        if (previous && previous.readyState < WebSocket.CLOSING) {
+            previous.close(1000, "Manual reconnect");
+        }
+        this.reconnectDelay = 1000;
+        this.error = undefined;
+        this.stopped = false;
+        this.open();
     }
 
     // Tile rectangle to stream, all levels. Only sent when it changes.
@@ -86,6 +104,12 @@ export class WorldFeedClient {
             if (this.roster) {
                 this.send({ t: "roster", on: true });
             }
+            clearInterval(this.heartbeatTimer);
+            this.heartbeatTimer = setInterval(() => {
+                if (this.ws === ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ t: "ping" }));
+                }
+            }, HEARTBEAT_INTERVAL_MS);
         };
 
         ws.onmessage = (event) => {
@@ -122,6 +146,7 @@ export class WorldFeedClient {
             if (this.ws !== ws) {
                 return;
             }
+            clearInterval(this.heartbeatTimer);
             this.ws = undefined;
             const reason = event.reason || this.error || (event.code !== 1000 ? `closed (${event.code})` : undefined);
             this.setStatus("closed", reason);
