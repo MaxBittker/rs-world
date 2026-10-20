@@ -49,10 +49,6 @@
     left: 0;
 }
 
-.joystick-container.right {
-    right: 0;
-}
-
 .live-overlay-container {
     position: absolute;
     inset: 0;
@@ -109,10 +105,6 @@
 
 .mobile .joystick-container.left {
     left: max(24px, calc(env(safe-area-inset-left) + 12px));
-}
-
-.mobile .joystick-container.right {
-    right: max(24px, calc(env(safe-area-inset-right) + 12px));
 }
 
 @media (max-width: 400px) {
