@@ -243,6 +243,19 @@ export class LiveController {
         return undefined;
     }
 
+    // Plane of the followed player: from the feed once visible, else from the roster.
+    getFollowedLevel(): number | undefined {
+        if (!this.followName) {
+            return undefined;
+        }
+        const player = this.getFollowed();
+        if (player) {
+            return player.level;
+        }
+        const name = this.followName.toLowerCase();
+        return this.world.rosterPlayers.find((p) => p[1].toLowerCase() === name)?.[4];
+    }
+
     // Puts the orbit's default view on a tile, so the area streams in before the player is found.
     private flyTo(camera: Camera, tileX: number, tileZ: number): void {
         camera.yaw = FOLLOW_YAW;

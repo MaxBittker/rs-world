@@ -154,6 +154,9 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
 
     // Settings
     maxLevel: number = Scene.MAX_LEVELS - 1;
+    // The "Max Level" slider; "Follow Level" overrides it while following a player.
+    manualMaxLevel: number = Scene.MAX_LEVELS - 1;
+    followLevel: boolean = true;
 
     skyColor: vec4 = vec4.fromValues(0, 0, 0, 1);
     fogDepth: number = 16;
@@ -554,12 +557,20 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
     getControls(): Schema {
         return {
             "Max Level": {
-                value: this.maxLevel,
+                value: this.manualMaxLevel,
                 min: 0,
                 max: 3,
                 step: 1,
                 onChange: (v: number) => {
-                    this.setMaxLevel(v);
+                    this.manualMaxLevel = v;
+                    this.updateFollowLevel();
+                },
+            },
+            "Follow Level": {
+                value: this.followLevel,
+                onChange: (v: boolean) => {
+                    this.followLevel = v;
+                    this.updateFollowLevel();
                 },
             },
             Sky: {
@@ -725,6 +736,21 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         this.mapsToLoad.clear();
     }
 
+    // With "Follow Level" on, show only up to the followed player's floor, so their roof and
+    // the floors above them don't hide them; otherwise use the slider.
+    updateFollowLevel(): void {
+        const live = this.mapViewer.live;
+        if (this.followLevel && live?.isFollowing()) {
+            const level = live.getFollowedLevel();
+            if (level !== undefined) {
+                this.setMaxLevel(level);
+            }
+            // Level unknown while flying to them: keep the current one rather than reload twice.
+            return;
+        }
+        this.setMaxLevel(this.manualMaxLevel);
+    }
+
     setMaxLevel(maxLevel: number): void {
         const updated = this.maxLevel !== maxLevel;
         this.maxLevel = maxLevel;
@@ -849,6 +875,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         }
 
         this.updateLive(clientTicksElapsed);
+        this.updateFollowLevel();
         this.updateRenderDistance(deltaTime);
 
         camera.update(this.app.width, this.app.height);
