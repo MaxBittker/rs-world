@@ -43,6 +43,7 @@ export interface CacheLoaderFactory {
     getIdkTypeLoader?(): TypeLoader<IdkType>;
     getSpotAnimTypeLoader?(): TypeLoader<SpotAnimType>;
     getHitmarkSprites?(): IndexedSprite[];
+    getHeadIconSprites?(): IndexedSprite[];
 
     getQuestTypeLoader(): QuestTypeLoader | undefined;
 
