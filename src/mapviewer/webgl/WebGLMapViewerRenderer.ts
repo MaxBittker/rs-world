@@ -156,7 +156,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
     maxLevel: number = Scene.MAX_LEVELS - 1;
     // The "Max Level" slider; "Follow Level" overrides it while following a player.
     manualMaxLevel: number = Scene.MAX_LEVELS - 1;
-    followLevel: boolean = false;
+    followLevel: boolean = true;
 
     skyColor: vec4 = vec4.fromValues(0, 0, 0, 1);
     fogDepth: number = 16;
