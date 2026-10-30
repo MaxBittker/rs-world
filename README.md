@@ -62,7 +62,8 @@ That only works if that server runs with `WORLD_FEED=true`.
 The Live panel (bottom right) shows connection state, the online count and every player (scroll for more). Info, under
 it, credits the original viewer and links the repos. Render settings (top right) default to one step
 brighter than the old client default and 1 rendered pixel per CSS pixel. Pick Native there for
-full hi-dpi resolution.
+full hi-dpi resolution. Turn on Follow Level there to have Max Level track the floor of the player
+you're following, so it changes as they climb up and down stairs and ladders.
 
 iPhone and iPad browsers can load the viewer when WebGL2 is available. Touch controls use the
 two joysticks and dragging on the scene. On mobile, the player list and Info button sit at the
