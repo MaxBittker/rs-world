@@ -17,6 +17,7 @@ import { CollisionFlag } from "../../rs/pathfinder/flag/CollisionFlag";
 import { CollisionMap } from "../../rs/scene/CollisionMap";
 import { Scene } from "../../rs/scene/Scene";
 import { DrawRange, newDrawRange } from "./DrawRange";
+import { LOC_REF_INDEX_RANGE, LOC_REF_SIZE, SdLocTable, findLoc } from "./loader/SdLocTable";
 import { SdMapData } from "./loader/SdMapData";
 import { LocAnimated } from "./loc/LocAnimated";
 import { Npc } from "./npc/Npc";
@@ -24,6 +25,25 @@ import { Npc } from "./npc/Npc";
 const FRAME_RENDER_DELAY = 3;
 
 const NPC_DATA_TEXTURE_BUFFER_SIZE = 5;
+
+// An instance texel with both coords at 0xffff is drawn nowhere (main.vert.glsl).
+const HIDDEN_TEXEL = 0xffff;
+
+// A static loc hidden by live zone state: what its texels held before, and the index ranges
+// the loc table has no copy of (read back from the GPU, see readIndices).
+type HiddenLoc = {
+    texels: number[];
+    indices?: Int32Array[];
+};
+
+// Degenerate indices to write over a hidden range (grown as needed).
+let degenerateIndices = new Int32Array(1024);
+
+// picogl keeps these private; reading an index range back needs them.
+type RawVertexBuffer = {
+    buffer: WebGLBuffer;
+    appState: { vertexArray: unknown };
+};
 
 function createModelInfoTexture(app: PicoApp, data: Uint16Array): Texture {
     return app.createTexture2D(data, 16, Math.max(Math.ceil(data.length / 16 / 4), 1), {
@@ -44,6 +64,12 @@ export class WebGLMapSquare {
     npcDataTextureOffsets: number[];
 
     heightMapData?: Int16Array;
+
+    // Live zone state: where the static locs are in the GPU data, the CPU copies of the model
+    // info textures, and the locs hidden now (by local key, see SdLocTable).
+    locTable?: SdLocTable;
+    modelTextureDatas?: Uint16Array[];
+    hiddenLocs: Map<number, HiddenLoc> = new Map();
 
     static load(
         seqTypeLoader: SeqTypeLoader,
@@ -302,6 +328,17 @@ export class WebGLMapSquare {
         );
         // Kept on the CPU so live entities can be placed on the terrain.
         square.heightMapData = mapData.heightMapTextureData;
+        square.locTable = mapData.locTable;
+        square.modelTextureDatas = [
+            mapData.modelTextureData,
+            mapData.modelTextureDataAlpha,
+            mapData.modelTextureDataLod,
+            mapData.modelTextureDataLodAlpha,
+            mapData.modelTextureDataInteract,
+            mapData.modelTextureDataInteractAlpha,
+            mapData.modelTextureDataInteractLod,
+            mapData.modelTextureDataInteractLodAlpha,
+        ];
         return square;
     }
 
@@ -408,6 +445,122 @@ export class WebGLMapSquare {
                 return isAlpha ? this.drawCallAlpha : this.drawCall;
             }
         }
+    }
+
+    // The static loc on a tile and layer (local key), packed as SdLocTable.info, or -1.
+    getLocInfo(key: number): number {
+        const index = this.locTable ? findLoc(this.locTable, key) : -1;
+        return index === -1 ? -1 : this.locTable!.info[index * 2];
+    }
+
+    getLocRaise(key: number): number {
+        const index = this.locTable ? findLoc(this.locTable, key) : -1;
+        return index === -1 ? 0 : this.locTable!.info[index * 2 + 1];
+    }
+
+    // Hides or shows a static loc without rebuilding the square: instanced models get a hidden
+    // instance texel, merged models have their index range collapsed to one vertex.
+    setLocHidden(gl: WebGL2RenderingContext, key: number, hidden: boolean): void {
+        const table = this.locTable;
+        const datas = this.modelTextureDatas;
+        if (!table || !datas || this.hiddenLocs.has(key) === hidden) {
+            return;
+        }
+        const index = findLoc(table, key);
+        if (index === -1) {
+            return;
+        }
+        const refs = table.refs;
+        const start = table.refStart[index];
+        const end = table.refStart[index + 1];
+        let dirty = 0;
+        if (hidden) {
+            const saved: HiddenLoc = { texels: [] };
+            for (let r = start; r < end; r++) {
+                const kind = refs[r * LOC_REF_SIZE];
+                const a = refs[r * LOC_REF_SIZE + 1];
+                const b = refs[r * LOC_REF_SIZE + 2];
+                const c = refs[r * LOC_REF_SIZE + 3];
+                if (kind === LOC_REF_INDEX_RANGE) {
+                    let first: number;
+                    if (c !== -1) {
+                        first = table.rangeIndices[c];
+                    } else {
+                        // A loc without ops: rarely changed, so no copy was kept.
+                        const original = new Int32Array(b);
+                        this.readIndices(gl, a, original);
+                        (saved.indices ??= []).push(original);
+                        first = original[0];
+                    }
+                    if (degenerateIndices.length < b) {
+                        const size = Math.max(b, degenerateIndices.length * 2);
+                        degenerateIndices = new Int32Array(size);
+                    }
+                    const degenerate = degenerateIndices.subarray(0, b);
+                    this.indexBuffer.data(degenerate.fill(first), a);
+                } else {
+                    const data = datas[kind];
+                    saved.texels.push(data[a * 4], data[a * 4 + 1]);
+                    data[a * 4] = HIDDEN_TEXEL;
+                    data[a * 4 + 1] = HIDDEN_TEXEL;
+                    dirty |= 1 << kind;
+                }
+            }
+            this.hiddenLocs.set(key, saved);
+        } else {
+            const saved = this.hiddenLocs.get(key)!;
+            this.hiddenLocs.delete(key);
+            let texel = 0;
+            let range = 0;
+            for (let r = start; r < end; r++) {
+                const kind = refs[r * LOC_REF_SIZE];
+                const a = refs[r * LOC_REF_SIZE + 1];
+                const b = refs[r * LOC_REF_SIZE + 2];
+                const c = refs[r * LOC_REF_SIZE + 3];
+                if (kind === LOC_REF_INDEX_RANGE) {
+                    const original =
+                        c !== -1 ? table.rangeIndices.subarray(c, c + b) : saved.indices![range++];
+                    this.indexBuffer.data(original, a);
+                } else {
+                    const data = datas[kind];
+                    data[a * 4] = saved.texels[texel++];
+                    data[a * 4 + 1] = saved.texels[texel++];
+                    dirty |= 1 << kind;
+                }
+            }
+        }
+        const textures = this.getModelInfoTextures();
+        for (let kind = 0; kind < textures.length; kind++) {
+            if (dirty & (1 << kind)) {
+                textures[kind].data(datas[kind]);
+            }
+        }
+    }
+
+    private readIndices(gl: WebGL2RenderingContext, byteOffset: number, out: Int32Array): void {
+        const raw = this.indexBuffer as unknown as RawVertexBuffer;
+        // Like picogl's VertexBuffer.data: don't touch the bound vertex array's index buffer.
+        if (raw.appState.vertexArray) {
+            gl.bindVertexArray(null);
+            raw.appState.vertexArray = null;
+        }
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, raw.buffer);
+        gl.getBufferSubData(gl.ELEMENT_ARRAY_BUFFER, byteOffset, out);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+    }
+
+    // Same order as SdLocTable's ref kinds.
+    getModelInfoTextures(): Texture[] {
+        return [
+            this.modelInfoTexture,
+            this.modelInfoTextureAlpha,
+            this.modelInfoTextureLod,
+            this.modelInfoTextureLodAlpha,
+            this.modelInfoTextureInteract,
+            this.modelInfoTextureInteractAlpha,
+            this.modelInfoTextureInteractLod,
+            this.modelInfoTextureInteractLodAlpha,
+        ];
     }
 
     delete() {

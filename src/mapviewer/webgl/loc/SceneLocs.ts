@@ -93,6 +93,7 @@ export function createSceneModel(
         priority,
         interactType: InteractType.LOC,
         interactId: id,
+        sceneLoc,
     };
 }
 

@@ -87,10 +87,34 @@ export class LiveWorld {
     }
 
     applyRoster(msg: FeedRoster): void {
-        this.rosterPlayers = msg.p;
+        let players: RosterPlayer[];
+        if (msg.d) {
+            // Changes since the previous roster on this connection (the server always sends a
+            // full one first). Changed entries are new arrays; unchanged ones are shared.
+            const bySlot = new Map<number, RosterPlayer>();
+            for (const entry of this.rosterPlayers) {
+                bySlot.set(entry[0], entry);
+            }
+            for (const slot of msg.lv) {
+                bySlot.delete(slot);
+            }
+            for (const entry of msg.j) {
+                bySlot.set(entry[0], entry);
+            }
+            for (const [slot, x, z, level, combat] of msg.m) {
+                const old = bySlot.get(slot);
+                if (old) {
+                    bySlot.set(slot, [slot, old[1], x, z, level, combat ?? old[5]]);
+                }
+            }
+            players = [...bySlot.values()];
+        } else {
+            players = msg.p;
+        }
+        this.rosterPlayers = players;
         this.rosterNpcCount = msg.npcs;
         this.rosterTick = msg.k;
-        this.far.update(msg.p, msg.k, this.loopCycle);
+        this.far.update(players, msg.k, this.loopCycle);
     }
 
     getEntity(faceIndex: number): LiveEntity | undefined {
@@ -153,6 +177,14 @@ export class LiveWorld {
             e.level = record.l;
         }
         if (record.x === undefined || record.z === undefined) {
+            if (record.m && !isNew) {
+                // Steps from where the entity was last tick (the server only leaves the coords
+                // out when this view had that tile).
+                const running = record.m.length > 1;
+                for (const dir of record.m) {
+                    e.moveCode(running, dir, this.abortsOnMove(e));
+                }
+            }
             return;
         }
         if (isNew) {
@@ -166,8 +198,8 @@ export class LiveWorld {
         }
 
         if (record.m) {
-            // Steps are relative to where the server had the entity last tick; if this view
-            // disagrees (missed ticks), catch up to that origin first.
+            // Steps with coords: this view's tile for the entity is out of date; catch up to
+            // where the steps start first.
             let originX = record.x;
             let originZ = record.z;
             for (const dir of record.m) {
@@ -340,7 +372,8 @@ export class LiveWorld {
             e.exactMoveStart === this.loopCycle ||
             e.primaryAnim === -1 ||
             e.primaryAnimDelay !== 0 ||
-            e.primaryAnimCycle + 1 > this.getFrameDelay(this.seqTypeLoader.load(e.primaryAnim), e.primaryAnimFrame)
+            e.primaryAnimCycle + 1 >
+                this.getFrameDelay(this.seqTypeLoader.load(e.primaryAnim), e.primaryAnimFrame)
         ) {
             const duration = e.exactMoveStart - e.exactMoveEnd;
             const delta = this.loopCycle - e.exactMoveEnd;
@@ -485,7 +518,10 @@ export class LiveWorld {
             }
         }
 
-        if ((e.faceSquareX !== 0 || e.faceSquareZ !== 0) && (e.routeLength === 0 || e.animDelayMove > 0)) {
+        if (
+            (e.faceSquareX !== 0 || e.faceSquareZ !== 0) &&
+            (e.routeLength === 0 || e.animDelayMove > 0)
+        ) {
             this.faceSquare(e, e.faceSquareX, e.faceSquareZ);
             e.faceSquareX = 0;
             e.faceSquareZ = 0;
@@ -516,7 +552,10 @@ export class LiveWorld {
             const seq = this.seqTypeLoader.load(e.secondaryAnim);
             const frameCount = getFrameCount(seq);
             e.secondaryAnimCycle += animSpeed;
-            if (e.secondaryAnimFrame < frameCount && e.secondaryAnimCycle > this.getFrameDelay(seq, e.secondaryAnimFrame)) {
+            if (
+                e.secondaryAnimFrame < frameCount &&
+                e.secondaryAnimCycle > this.getFrameDelay(seq, e.secondaryAnimFrame)
+            ) {
                 e.secondaryAnimCycle = 0;
                 e.secondaryAnimFrame++;
             }
@@ -531,11 +570,17 @@ export class LiveWorld {
                 e.spotanimFrame = 0;
             }
             const spot = this.spotAnimTypeLoader?.load(e.spotanimId);
-            const seq = spot && spot.sequenceId !== -1 ? this.seqTypeLoader.load(spot.sequenceId) : undefined;
+            const seq =
+                spot && spot.sequenceId !== -1
+                    ? this.seqTypeLoader.load(spot.sequenceId)
+                    : undefined;
             e.spotanimCycle += animSpeed;
             if (seq) {
                 const frameCount = getFrameCount(seq);
-                while (e.spotanimFrame < frameCount && e.spotanimCycle > this.getFrameDelay(seq, e.spotanimFrame)) {
+                while (
+                    e.spotanimFrame < frameCount &&
+                    e.spotanimCycle > this.getFrameDelay(seq, e.spotanimFrame)
+                ) {
                     e.spotanimCycle -= this.getFrameDelay(seq, e.spotanimFrame);
                     e.spotanimFrame++;
                 }
@@ -564,7 +609,10 @@ export class LiveWorld {
             const seq = this.seqTypeLoader.load(e.primaryAnim);
             const frameCount = getFrameCount(seq);
             e.primaryAnimCycle += animSpeed;
-            while (e.primaryAnimFrame < frameCount && e.primaryAnimCycle > this.getFrameDelay(seq, e.primaryAnimFrame)) {
+            while (
+                e.primaryAnimFrame < frameCount &&
+                e.primaryAnimCycle > this.getFrameDelay(seq, e.primaryAnimFrame)
+            ) {
                 e.primaryAnimCycle -= this.getFrameDelay(seq, e.primaryAnimFrame);
                 e.primaryAnimFrame++;
             }

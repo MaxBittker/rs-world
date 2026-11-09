@@ -2,7 +2,8 @@
 
 #include "./includes/multi-draw.glsl";
 
-// Live players, npcs and spotanims. Like npc.vert.glsl, but positioned in absolute world space:
+// Live players, npcs, spotanims and zone state (locs, ground objs, projectiles, map anims).
+// Like npc.vert.glsl, but positioned in absolute world space:
 // the CPU resolves ground height (bridges included) and writes one instance per draw.
 
 #define TEXTURE_ANIM_UNIT (1.0f / 128.0f)
@@ -22,7 +23,7 @@ uniform highp isampler2D u_textureMaterials;
 
 // Two texels per instance:
 //   [fineX, fineY (ground height, negative is up), fineZ, yaw | plane << 11]
-//   [interactId, interactType, 0, 0]
+//   [interactId, interactType, pitch (projectiles), 0]
 uniform highp isampler2D u_entityData;
 uniform int u_entityDataOffset;
 
@@ -78,7 +79,16 @@ void main() {
     float yaw = float(position.w & 0x7FF);
     float plane = float((position.w >> 11) & 0x3);
 
-    vec4 localPos = vec4(vertex.pos, 1.0) * rotationY(yaw * RS_TO_RADIANS)
+    // Projectiles tilt along their arc first (the client's Model.rotateXAxis).
+    vec3 pos = vertex.pos;
+    if (interact.z != 0) {
+        float pitch = float(interact.z & 0x7FF) * RS_TO_RADIANS;
+        float s = sin(pitch);
+        float c = cos(pitch);
+        pos = vec3(pos.x, pos.y * c - pos.z * s, pos.y * s + pos.z * c);
+    }
+
+    vec4 localPos = vec4(pos, 1.0) * rotationY(yaw * RS_TO_RADIANS)
         + vec4(float(position.x), float(position.y), float(position.z), 0.0);
 
     localPos /= vec4(vec3(128.0), 1.0);

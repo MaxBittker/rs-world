@@ -27,6 +27,13 @@ export class WorldFeedClient {
     bytesReceived: number = 0;
     messagesReceived: number = 0;
 
+    // While the tab is hidden nothing is drawn, so the feed streams nothing (the socket stays
+    // open); showing it again resubscribes, and the server starts the area over (reset).
+    // Read live: the page can be shown before the listener is added.
+    private get hidden(): boolean {
+        return typeof document !== "undefined" && document.hidden;
+    }
+
     private reconnectDelay = 1000;
     private reconnectTimer?: ReturnType<typeof setTimeout>;
     private heartbeatTimer?: ReturnType<typeof setInterval>;
@@ -39,10 +46,16 @@ export class WorldFeedClient {
 
     connect(): void {
         this.stopped = false;
+        if (typeof document !== "undefined") {
+            document.addEventListener("visibilitychange", this.onVisibilityChange);
+        }
         this.open();
     }
 
     close(): void {
+        if (typeof document !== "undefined") {
+            document.removeEventListener("visibilitychange", this.onVisibilityChange);
+        }
         this.stopped = true;
         clearTimeout(this.reconnectTimer);
         clearInterval(this.heartbeatTimer);
@@ -70,7 +83,13 @@ export class WorldFeedClient {
     setArea(x: number, z: number, w: number, h: number): void {
         const area = { x: x | 0, z: z | 0, w: w | 0, h: h | 0 };
         const current = this.area;
-        if (current && current.x === area.x && current.z === area.z && current.w === area.w && current.h === area.h) {
+        if (
+            current &&
+            current.x === area.x &&
+            current.z === area.z &&
+            current.w === area.w &&
+            current.h === area.h
+        ) {
             return;
         }
         this.area = area;
@@ -82,8 +101,13 @@ export class WorldFeedClient {
             return;
         }
         this.roster = on;
-        this.send({ t: "roster", on });
+        this.sendRoster();
     }
+
+    private onVisibilityChange = (): void => {
+        this.sendArea();
+        this.sendRoster();
+    };
 
     private open(): void {
         this.setStatus("connecting");
@@ -102,7 +126,7 @@ export class WorldFeedClient {
             this.setStatus("open");
             this.sendArea();
             if (this.roster) {
-                this.send({ t: "roster", on: true });
+                this.sendRoster();
             }
             clearInterval(this.heartbeatTimer);
             this.heartbeatTimer = setInterval(() => {
@@ -148,7 +172,10 @@ export class WorldFeedClient {
             }
             clearInterval(this.heartbeatTimer);
             this.ws = undefined;
-            const reason = event.reason || this.error || (event.code !== 1000 ? `closed (${event.code})` : undefined);
+            const reason =
+                event.reason ||
+                this.error ||
+                (event.code !== 1000 ? `closed (${event.code})` : undefined);
             this.setStatus("closed", reason);
             this.scheduleReconnect();
         };
@@ -165,8 +192,14 @@ export class WorldFeedClient {
 
     private sendArea(): void {
         if (this.area) {
-            this.send({ t: "sub", ...this.area });
+            this.send(
+                this.hidden ? { t: "sub", x: 0, z: 0, w: 0, h: 0 } : { t: "sub", ...this.area },
+            );
         }
+    }
+
+    private sendRoster(): void {
+        this.send({ t: "roster", on: this.roster && !this.hidden });
     }
 
     private send(msg: object): void {

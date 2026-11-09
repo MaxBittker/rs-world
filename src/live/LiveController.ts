@@ -8,6 +8,7 @@ import { IndexedSprite } from "../rs/sprite/IndexedSprite";
 import { LiveEntity, LivePlayer } from "./LiveEntity";
 import { LiveWorld } from "./LiveWorld";
 import { FeedStatus, WorldFeedClient } from "./WorldFeedClient";
+import { WorldState } from "./WorldState";
 import { RosterPlayer } from "./protocol";
 
 // Tiles streamed around the camera; the engine caps a subscription at 384 x 384, which a radius
@@ -45,6 +46,7 @@ export type LiveOptions = {
 export class LiveController {
     readonly world: LiveWorld;
     readonly feed: WorldFeedClient;
+    readonly feedId: number;
 
     status: FeedStatus = "closed";
     error?: string;
@@ -88,16 +90,29 @@ export class LiveController {
         seqTypeLoader: SeqTypeLoader,
         seqFrameLoader: SeqFrameLoader,
         spotAnimTypeLoader: TypeLoader<SpotAnimType> | undefined,
+        readonly worldState?: WorldState,
     ) {
-        this.world = new LiveWorld(npcTypeLoader, seqTypeLoader, seqFrameLoader, spotAnimTypeLoader);
+        this.world = new LiveWorld(
+            npcTypeLoader,
+            seqTypeLoader,
+            seqFrameLoader,
+            spotAnimTypeLoader,
+        );
+        this.feedId = worldState?.newFeedId() ?? 0;
         this.feed = new WorldFeedClient(url, {
-            onHello: () => {
+            onHello: (hello) => {
                 this.world.clear();
                 this.world.far.clear();
+                // A new connection sends its area (za) and that area's state again.
+                this.worldState?.onHello(this.feedId, hello.tick);
                 this.version++;
             },
             onTick: (tick) => {
                 this.world.applyTick(tick);
+                if (tick.w) {
+                    // A reset comes with its own za (r = 1).
+                    this.worldState?.apply(this.feedId, tick.k, this.world, tick.w);
+                }
                 this.version++;
             },
             onRoster: (roster) => {
@@ -116,6 +131,7 @@ export class LiveController {
     stop(): void {
         this.feed.close();
         this.world.clear();
+        this.worldState?.dropFeed(this.feedId);
     }
 
     reconnect(): void {
@@ -123,7 +139,12 @@ export class LiveController {
     }
 
     // Called once per rendered frame with the 20ms client cycles that elapsed.
-    update(clientCycles: number, camera: Camera, renderDistance: number, getGroundY: (e: LiveEntity) => number | undefined): void {
+    update(
+        clientCycles: number,
+        camera: Camera,
+        renderDistance: number,
+        getGroundY: (e: LiveEntity) => number | undefined,
+    ): void {
         // Connect on the first rendered frame, so viewers that never render never connect.
         if (!this.started) {
             this.started = true;
@@ -145,7 +166,9 @@ export class LiveController {
         // Seeing further than the engine will stream: the half behind the camera is mostly off
         // screen, so slide the area forward, up to half its size (less when looking down).
         const radius = clamp(renderDistance, MIN_AREA_RADIUS, MAX_AREA_RADIUS);
-        const ahead = clamp(renderDistance - MAX_AREA_RADIUS, 0, MAX_AREA_RADIUS / 2) * Math.cos(camera.pitch * RS_TO_RADIANS);
+        const ahead =
+            clamp(renderDistance - MAX_AREA_RADIUS, 0, MAX_AREA_RADIUS / 2) *
+            Math.cos(camera.pitch * RS_TO_RADIANS);
         const yaw = (camera.yaw - 1024) * RS_TO_RADIANS;
         const centerX = camera.getPosX() - Math.sin(yaw) * ahead;
         const centerZ = camera.getPosZ() - Math.cos(yaw) * ahead;
@@ -171,7 +194,9 @@ export class LiveController {
     // keep following them.
     goToPlayer(name: string, camera: Camera): void {
         const visible = this.world.findPlayer(name);
-        const entry = this.world.rosterPlayers.find((p) => p[1].toLowerCase() === name.toLowerCase());
+        const entry = this.world.rosterPlayers.find(
+            (p) => p[1].toLowerCase() === name.toLowerCase(),
+        );
         if (visible) {
             this.flyTo(camera, visible.x / 128, visible.z / 128);
         } else if (entry) {
@@ -235,7 +260,11 @@ export class LiveController {
         if (wheelDelta === 0 || this.orbitDistance === 0) {
             return;
         }
-        this.orbitDistance = clamp(this.orbitDistance * Math.exp(wheelDelta * 0.0015), MIN_ORBIT_DISTANCE, MAX_ORBIT_DISTANCE);
+        this.orbitDistance = clamp(
+            this.orbitDistance * Math.exp(wheelDelta * 0.0015),
+            MIN_ORBIT_DISTANCE,
+            MAX_ORBIT_DISTANCE,
+        );
     }
 
     getFollowed(): LivePlayer | undefined {
@@ -292,7 +321,11 @@ export class LiveController {
                 this.lastRosterJumpTick = this.world.rosterTick;
                 const name = this.followName.toLowerCase();
                 const entry = this.world.rosterPlayers.find((p) => p[1].toLowerCase() === name);
-                if (entry && (Math.abs(entry[2] + 0.5 - camera.getPosX()) > 32 || Math.abs(entry[3] + 0.5 - camera.getPosZ()) > 32)) {
+                if (
+                    entry &&
+                    (Math.abs(entry[2] + 0.5 - camera.getPosX()) > 32 ||
+                        Math.abs(entry[3] + 0.5 - camera.getPosZ()) > 32)
+                ) {
                     this.flyTo(camera, entry[2] + 0.5, entry[3] + 0.5);
                 }
             }
@@ -316,7 +349,9 @@ export class LiveController {
             const distance = Math.hypot(dx, dy, dz);
             this.orbitDistance = clamp(distance, MIN_ORBIT_DISTANCE, MAX_ORBIT_DISTANCE);
             camera.yaw = Math.round((Math.atan2(dx, dz) * 1024) / Math.PI) & 2047;
-            camera.pitch = Math.round(Math.asin(clamp(-dy / Math.max(distance, 0.001), -1, 1)) / RS_TO_RADIANS);
+            camera.pitch = Math.round(
+                Math.asin(clamp(-dy / Math.max(distance, 0.001), -1, 1)) / RS_TO_RADIANS,
+            );
         }
 
         camera.pitch = clamp(camera.pitch, MIN_ORBIT_PITCH, MAX_ORBIT_PITCH);

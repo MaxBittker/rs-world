@@ -2,6 +2,7 @@ import { vec3 } from "gl-matrix";
 
 import { Model, computeTextureCoords } from "../../../rs/model/Model";
 import { Scene } from "../../../rs/scene/Scene";
+import { SceneLoc } from "../../../rs/scene/SceneLoc";
 import { SceneTile } from "../../../rs/scene/SceneTile";
 import { TextureLoader } from "../../../rs/texture/TextureLoader";
 import { clamp } from "../../../util/MathUtil";
@@ -40,6 +41,8 @@ export type SceneModel = {
     sceneHeight: number;
     lowDetail: boolean;
     forceMerge: boolean;
+    // The map loc this model draws, so live zone state can hide it (see SdLocTable).
+    sceneLoc?: SceneLoc;
 } & ModelInfo;
 
 export type ModelMergeGroup = {
@@ -67,6 +70,9 @@ export class SceneBuffer {
     drawCommandsInteractLodAlpha: DrawCommand[] = [];
 
     usedTextureIds = new Set<number>();
+
+    // Merged loc models and their index ranges (byte offset, element count).
+    mergedLocRanges: [SceneModel, number, number][] = [];
 
     constructor(
         readonly textureLoader: TextureLoader,
@@ -302,6 +308,9 @@ export class SceneBuffer {
             const offset = this.indexByteOffset();
             this.addModel(model, faces, vertexOffset);
             const elements = (this.indexByteOffset() - offset) / 4;
+            if (sceneModel.sceneLoc && elements > 0) {
+                this.mergedLocRanges.push([sceneModel, offset, elements]);
+            }
 
             const drawCommand: DrawCommand = {
                 offset: offset,

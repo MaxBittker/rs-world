@@ -1,6 +1,6 @@
-// Wire format of the rs-sdk world feed (engine src/web/worldfeed.ts, protocol v1).
+// Wire format of the rs-sdk world feed (engine src/web/worldfeed.ts, protocol v2).
 
-export const WORLD_FEED_VERSION = 1;
+export const WORLD_FEED_VERSION = 2;
 
 export type FeedHello = {
     t: "hello";
@@ -19,6 +19,8 @@ export type FeedEntity = {
     f?: number;
     // npc type (first sight and change_type)
     t?: number;
+    // tile coords: first sight, teleports, and steps from a tile this view didn't have. Left out
+    // when the steps in m start from where the entity was last tick.
     x?: number;
     z?: number;
     l?: number;
@@ -58,16 +60,72 @@ export type FeedTick = {
     n?: FeedEntity[];
     rp?: number[];
     rn?: number[];
+    // zone state (locs, projectiles, map anims), applied in order.
+    w?: ZoneRecord[];
 };
+
+// Zone records use absolute tiles x, z and level l. A zone is the engine's 8x8 area on one level.
+export type ZoneRecord =
+    // the held area (zone-aligned tiles, every level), first in w when it changes: zones newly
+    // held start at the cache default (all of them when r = 1, a reset), zones left are dropped;
+    // the loc state of newly held zones follows as la/ld
+    | { e: "za"; x: number; z: number; w: number; h: number; r?: number }
+    // loc add/change (s = shape, r = angle) and loc del
+    | { e: "la"; x: number; z: number; l: number; id: number; s: number; r: number }
+    | { e: "ld"; x: number; z: number; l: number; s: number; r: number }
+    // loc anim (q = seq)
+    | { e: "an"; x: number; z: number; l: number; s: number; r: number; q: number }
+    // loc merged onto a player (p = slot, sc/ec = start/end cycle, bx = [east, south, west, north])
+    | {
+          e: "lm";
+          x: number;
+          z: number;
+          l: number;
+          id: number;
+          s: number;
+          r: number;
+          sc: number;
+          ec: number;
+          p: number;
+          bx: number[];
+      }
+    // map anim (id = spotanim, h = height, d = delay in client cycles)
+    | { e: "ma"; x: number; z: number; l: number; id: number; h: number; d: number }
+    // projectile from (x, z) to the absolute tile (dx, dz). tg = target as the client protocol
+    // encodes it (0 none, > 0 npc nid + 1, < 0 -(player slot + 1)), sh/dh = heights in 4-unit
+    // steps, sd/ed = start/end delay in client cycles, pk = peak (pitch), ar = arc (start offset)
+    | {
+          e: "pj";
+          x: number;
+          z: number;
+          l: number;
+          dx: number;
+          dz: number;
+          tg: number;
+          id: number;
+          sh: number;
+          dh: number;
+          sd: number;
+          ed: number;
+          pk: number;
+          ar: number;
+      };
 
 // [slot, name, x, z, level, combatLevel]
 export type RosterPlayer = [number, string, number, number, number, number];
 
-export type FeedRoster = {
-    t: "roster";
-    k: number;
-    p: RosterPlayer[];
-    npcs: number;
-};
+// The first roster on a connection is the full list; the ones after it (d = 1) are changes since
+// the previous one: j joined (or a slot taken over), lv left, m moved [slot, x, z, level, combat?].
+export type FeedRoster =
+    | { t: "roster"; k: number; d?: undefined; p: RosterPlayer[]; npcs: number }
+    | {
+          t: "roster";
+          k: number;
+          d: 1;
+          j: RosterPlayer[];
+          lv: number[];
+          m: number[][];
+          npcs: number;
+      };
 
 export type FeedMessage = FeedHello | FeedTick | FeedRoster;

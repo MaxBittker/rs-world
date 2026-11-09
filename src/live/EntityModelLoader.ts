@@ -1,5 +1,9 @@
+import { DrawRange, NULL_DRAW_RANGE } from "../mapviewer/webgl/DrawRange";
+import { SceneBuffer } from "../mapviewer/webgl/buffer/SceneBuffer";
 import { TypeLoader } from "../rs/config/TypeLoader";
 import { IdkType } from "../rs/config/idktype/IdkType";
+import { LocModelLoader } from "../rs/config/loctype/LocModelLoader";
+import { LocModelType } from "../rs/config/loctype/LocModelType";
 import { NpcModelLoader } from "../rs/config/npctype/NpcModelLoader";
 import { NpcTypeLoader } from "../rs/config/npctype/NpcTypeLoader";
 import { ObjType } from "../rs/config/objtype/ObjType";
@@ -10,8 +14,6 @@ import { Model } from "../rs/model/Model";
 import { ModelData } from "../rs/model/ModelData";
 import { ModelLoader } from "../rs/model/ModelLoader";
 import { TextureLoader } from "../rs/texture/TextureLoader";
-import { DrawRange, NULL_DRAW_RANGE } from "../mapviewer/webgl/DrawRange";
-import { SceneBuffer } from "../mapviewer/webgl/buffer/SceneBuffer";
 import { PLAYER_RECOL_1D, PLAYER_RECOL_2D, PlayerAppearance } from "./PlayerAppearance";
 
 // What to build a model from. Player bodies are keyed by appearance + held-item overrides so
@@ -19,7 +21,9 @@ import { PLAYER_RECOL_1D, PLAYER_RECOL_2D, PlayerAppearance } from "./PlayerAppe
 export type EntityModelSpec =
     | { kind: "npc"; npcType: number }
     | { kind: "player"; appearance: PlayerAppearance; leftHand: number; rightHand: number }
-    | { kind: "spot"; spotAnim: number };
+    | { kind: "spot"; spotAnim: number }
+    // A loc by shape and angle as the zone protocol sends it, origin at its centre on the ground.
+    | { kind: "loc"; loc: number; shape: number; angle: number };
 
 export type EntityAnimRequest = {
     key: string;
@@ -52,6 +56,7 @@ export class EntityModelLoader {
         readonly modelLoader: ModelLoader,
         readonly textureLoader: TextureLoader,
         readonly npcModelLoader: NpcModelLoader,
+        readonly locModelLoader?: LocModelLoader,
     ) {}
 
     bake(request: EntityAnimRequest, textureIdIndexMap: Map<number, number>): EntityAnimData {
@@ -108,13 +113,58 @@ export class EntityModelLoader {
             case "player": {
                 if (spec.appearance.transmog !== -1) {
                     const npcType = this.npcTypeLoader.load(spec.appearance.transmog);
-                    return npcType ? this.npcModelLoader.getModel(npcType, seqId, frame) : undefined;
+                    return npcType
+                        ? this.npcModelLoader.getModel(npcType, seqId, frame)
+                        : undefined;
                 }
                 const body = this.getPlayerBody(spec.appearance, spec.leftHand, spec.rightHand);
                 return body ? this.animate(body, seqId, frame) : undefined;
             }
             case "spot":
                 return this.getSpotAnimModel(spec.spotAnim, seqId, frame);
+            case "loc":
+                return this.getLocModel(spec.loc, spec.shape, spec.angle, seqId, frame);
+        }
+    }
+
+    // Like SceneBuilder.addLoc: which model type and rotation each shape draws with. Wall
+    // decoration is drawn on the wall line (without the displacement off the wall).
+    getLocModel(
+        id: number,
+        shape: number,
+        angle: number,
+        seqId: number,
+        frame: number,
+    ): Model | undefined {
+        const loader = this.locModelLoader;
+        if (!loader) {
+            return undefined;
+        }
+        const locType = loader.locTypeLoader.load(id);
+        if (!locType) {
+            return undefined;
+        }
+        const get = (type: LocModelType, rotation: number) =>
+            loader.getModelAnimated(locType, type, rotation, seqId, frame);
+        switch (shape) {
+            case LocModelType.NORMAL_DIAGIONAL:
+                return get(LocModelType.NORMAL, angle + 4);
+            case LocModelType.WALL_CORNER:
+                return mergeModels(get(shape, angle + 4), get(shape, (angle + 1) & 3));
+            case LocModelType.WALL_DECORATION_INSIDE:
+            case LocModelType.WALL_DECORATION_OUTSIDE:
+                return get(LocModelType.WALL_DECORATION_INSIDE, angle);
+            case LocModelType.WALL_DECORATION_DIAGONAL_OUTSIDE:
+                return get(LocModelType.WALL_DECORATION_INSIDE, angle + 4);
+            case LocModelType.WALL_DECORATION_DIAGONAL_INSIDE:
+                return get(LocModelType.WALL_DECORATION_INSIDE, ((angle + 2) & 3) + 4);
+            case LocModelType.WALL_DECORATION_DIAGONAL_DOUBLE:
+                return mergeModels(
+                    get(LocModelType.WALL_DECORATION_INSIDE, angle + 4),
+                    get(LocModelType.WALL_DECORATION_INSIDE, ((angle + 2) & 3) + 4),
+                );
+            default:
+                return get(shape, angle);
         }
     }
 
@@ -128,8 +178,21 @@ export class EntityModelLoader {
 
     // Port of ClientPlayer.getTempModel2 (rs-sdk webclient): identity kits and worn objects
     // merged, recoloured with the player's 5 colours, lit like the 289 client.
-    getPlayerBody(appearance: PlayerAppearance, leftHand: number, rightHand: number): Model | undefined {
-        const key = appearance.gender + ":" + appearance.parts.join(",") + ":" + appearance.colours.join(",") + ":" + leftHand + ":" + rightHand;
+    getPlayerBody(
+        appearance: PlayerAppearance,
+        leftHand: number,
+        rightHand: number,
+    ): Model | undefined {
+        const key =
+            appearance.gender +
+            ":" +
+            appearance.parts.join(",") +
+            ":" +
+            appearance.colours.join(",") +
+            ":" +
+            leftHand +
+            ":" +
+            rightHand;
         if (this.bodyCache.has(key)) {
             return this.bodyCache.get(key);
         }
@@ -234,7 +297,14 @@ export class EntityModelLoader {
                         copy.recolor(spot.recolorFrom[i], spot.recolorTo[i]);
                     }
                 }
-                base = copy.light(this.textureLoader, spot.ambient + 64, spot.contrast + 850, -30, -50, -30);
+                base = copy.light(
+                    this.textureLoader,
+                    spot.ambient + 64,
+                    spot.contrast + 850,
+                    -30,
+                    -50,
+                    -30,
+                );
             }
             this.bodyCache.set(key, base);
         }
@@ -266,6 +336,13 @@ export class EntityModelLoader {
     clearCache(): void {
         this.bodyCache.clear();
     }
+}
+
+function mergeModels(a: Model | undefined, b: Model | undefined): Model | undefined {
+    if (!a || !b) {
+        return a ?? b;
+    }
+    return Model.merge([a, b], 2);
 }
 
 function getModelHeight(model: Model): number {

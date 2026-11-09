@@ -2,6 +2,8 @@ import { vec3 } from "gl-matrix";
 import { URLSearchParamsInit } from "react-router-dom";
 
 import { OsrsMenuEntry } from "../components/rs/menu/OsrsMenu";
+import { LiveController, getDefaultFeedUrl } from "../live/LiveController";
+import { WorldState } from "../live/WorldState";
 import { MenuTargetType } from "../rs/MenuEntry";
 import { CacheSystem } from "../rs/cache/CacheSystem";
 import { CacheLoaderFactory, getCacheLoaderFactory } from "../rs/cache/loader/CacheLoaderFactory";
@@ -16,7 +18,6 @@ import { SeqFrameLoader } from "../rs/model/seq/SeqFrameLoader";
 import { Pathfinder } from "../rs/pathfinder/Pathfinder";
 import { TextureLoader } from "../rs/texture/TextureLoader";
 import { isTouchDevice } from "../util/DeviceUtil";
-import { LiveController, getDefaultFeedUrl } from "../live/LiveController";
 import { LoadedCache } from "./Caches";
 import { Camera, CameraView, ProjectionType } from "./Camera";
 import { InputManager } from "./InputManager";
@@ -92,6 +93,8 @@ export class MapViewer {
     liveParam: string | undefined;
     live?: LiveController;
     followParam: string | undefined;
+    // Locs, ground objs, projectiles and map anims from every feed (one store for all views).
+    worldState?: WorldState;
 
     constructor(
         readonly workerPool: RenderDataWorkerPool,
@@ -236,14 +239,23 @@ export class MapViewer {
     initLive(): void {
         this.live?.stop();
         this.live = undefined;
+        this.worldState?.clear();
+        this.worldState = undefined;
         // The live layer needs player kits/spotanims, only built for pre-dat2 (rs-sdk) caches.
         if (this.liveUrl && this.loaderFactory?.getIdkTypeLoader) {
+            this.worldState = new WorldState(
+                this.locTypeLoader,
+                this.seqTypeLoader,
+                this.seqFrameLoader,
+                this.loaderFactory.getSpotAnimTypeLoader?.(),
+            );
             this.live = new LiveController(
                 this.liveUrl,
                 this.npcTypeLoader,
                 this.seqTypeLoader,
                 this.seqFrameLoader,
                 this.loaderFactory.getSpotAnimTypeLoader?.(),
+                this.worldState,
             );
             if (this.followParam) {
                 this.live.pendingFollow = this.followParam;

@@ -2,6 +2,7 @@ import { TransferDescriptor } from "threads";
 import { registerSerializer } from "threads";
 import { Transfer, expose } from "threads/worker";
 
+import { EntityAnimData, EntityAnimRequest, EntityModelLoader } from "../../live/EntityModelLoader";
 import { CacheSystem } from "../../rs/cache/CacheSystem";
 import {
     CacheLoaderFactory,
@@ -26,7 +27,6 @@ import { Scene } from "../../rs/scene/Scene";
 import { LocLoadType, SceneBuilder } from "../../rs/scene/SceneBuilder";
 import { TextureLoader } from "../../rs/texture/TextureLoader";
 import { Hasher } from "../../util/Hasher";
-import { EntityAnimData, EntityAnimRequest, EntityModelLoader } from "../../live/EntityModelLoader";
 import { LoadedCache } from "../Caches";
 import { NpcSpawn } from "../data/npc/NpcSpawn";
 import { MinimapData, loadMinimapBlob } from "./MinimapData";
@@ -165,6 +165,7 @@ async function initWorker(cache: LoadedCache, npcSpawns: NpcSpawn[]): Promise<Wo
                 skeletalSeqLoader,
                 varManager,
             ),
+            locModelLoader,
         );
     }
 
