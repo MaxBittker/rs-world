@@ -72,7 +72,8 @@ export type ZoneRecord =
     | { e: "la"; x: number; z: number; l: number; id: number; s: number; r: number }
     | { e: "ld"; x: number; z: number; l: number; s: number; r: number }
     // loc anim (q = seq)
-    | { e: "an"; x: number; z: number; l: number; s: number; r: number; q: number }
+    // q = -1 stops a spin; sp = 1 starts one (the loc steps through its seq cycle every tick)
+    | { e: "an"; x: number; z: number; l: number; s: number; r: number; q: number; sp?: number }
     // loc merged onto a player (p = slot, sc/ec = start/end cycle, bx = [east, south, west, north])
     | {
           e: "lm";

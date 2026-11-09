@@ -138,3 +138,24 @@ test("a loc anim on an unchanged tile animates the static loc, and ld removes it
     state.apply(feed, 4, world, [{ ...AREA, r: 1 } as ZoneRecord]);
     expect(state.locs.size).toBe(0);
 });
+
+test("a cannon spin plays its steps between the start and the stop", () => {
+    const locTypeLoader = { load: () => ({ seqId: -1 }) } as any;
+    const seqTypeLoader = { load: (id: number) => ({ id, frameIds: [1], frameStep: -1 }) } as any;
+    const state = new WorldState(locTypeLoader, seqTypeLoader, {} as any, undefined);
+    const feed = state.newFeedId();
+    const at = { x: 3220, z: 3220, l: 0, s: 10, r: 0 };
+    const seqAt = () => (state.locs.get(getLocKey(3220, 3220, 0, 2))?.seq as any)?.id;
+    state.apply(feed, 10, world, [AREA, { e: "la", ...at, id: 6 }, { e: "an", ...at, q: 520, sp: 1 }]);
+    expect(seqAt()).toBe(520);
+    state.advanceSpins(10);
+    expect(seqAt()).toBe(520);
+    state.advanceSpins(11);
+    expect(seqAt()).toBe(521);
+    // A skipped tick still lands on the right step; the cycle wraps from nw back to n.
+    state.advanceSpins(13);
+    expect(seqAt()).toBe(515);
+    state.apply(feed, 14, world, [{ e: "an", ...at, q: -1 }]);
+    state.advanceSpins(15);
+    expect(seqAt()).toBe(515);
+});

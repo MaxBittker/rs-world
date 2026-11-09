@@ -109,6 +109,7 @@ export class LiveController {
                     // A reset comes with its own za (r = 1).
                     this.worldState?.apply(this.feedId, tick.k, this.world, tick.w);
                 }
+                this.worldState?.advanceSpins(tick.k);
                 this.version++;
             },
             onRoster: (roster) => {

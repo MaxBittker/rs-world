@@ -183,6 +183,13 @@ export class Projectile {
     }
 }
 
+// mcannon_n_turn .. mcannon_nw_turn: the cannon's 8 turn seqs, one per tick, in order.
+const SPIN_FIRST_SEQ = 514;
+const SPIN_SEQS = 8;
+function isSpinSeq(seq: number): boolean {
+    return seq >= SPIN_FIRST_SEQ && seq < SPIN_FIRST_SEQ + SPIN_SEQS;
+}
+
 // Only zones that have state (or had records) are kept; every other held zone is the default.
 class Zone {
     // The server tick this zone's state is current as of, and the apply() call that may still
@@ -272,6 +279,9 @@ export class WorldState {
     projectiles: Projectile[] = [];
     // Overrides that are animating, stepped by update().
     private animating: Set<LocOverride> = new Set();
+    // Cannon spins: the server sends only the start (an with sp) and the stop (q = -1); every
+    // tick in between the loc plays the next seq of the cycle (seq and tick last played).
+    private spins: Map<LocOverride, { seq: number; tick: number }> = new Map();
 
     loopCycle: number = 0;
     private lastUpdateCycle: number = -1;
@@ -347,8 +357,12 @@ export class WorldState {
                         record.r,
                     );
                     break;
-                case "an":
-                    this.animateLoc(
+                case "an": {
+                    if (record.q === -1) {
+                        this.stopSpin(record.x, record.z, record.l, record.s);
+                        break;
+                    }
+                    const loc = this.animateLoc(
                         zone,
                         record.x,
                         record.z,
@@ -357,7 +371,13 @@ export class WorldState {
                         record.r,
                         record.q,
                     );
+                    if (loc && record.sp && isSpinSeq(record.q)) {
+                        this.spins.set(loc, { seq: record.q, tick });
+                    } else if (loc) {
+                        this.spins.delete(loc);
+                    }
                     break;
+                }
                 case "oa":
                     this.addObj(zone, record.x, record.z, record.l, record.id, record.n);
                     break;
@@ -481,9 +501,29 @@ export class WorldState {
         }
     }
 
+    // Plays each running spin's step for every server tick since its last one.
+    advanceSpins(tick: number): void {
+        for (const [loc, spin] of this.spins) {
+            if (tick <= spin.tick) {
+                continue;
+            }
+            spin.seq = SPIN_FIRST_SEQ + ((spin.seq - SPIN_FIRST_SEQ + tick - spin.tick) % SPIN_SEQS);
+            spin.tick = tick;
+            this.startAnim(loc, spin.seq, false);
+        }
+    }
+
+    private stopSpin(x: number, z: number, level: number, shape: number): void {
+        const loc = this.locs.get(getLocKey(x, z, level, LOC_SHAPE_TO_LAYER[shape] ?? LOC_LAYER_GROUND));
+        if (loc) {
+            this.spins.delete(loc);
+        }
+    }
+
     private removeLoc(loc: LocOverride): void {
         this.locs.delete(loc.key);
         this.animating.delete(loc);
+        this.spins.delete(loc);
         const squareId = getSquareId(loc.x, loc.z);
         const square = this.locsBySquare.get(squareId);
         if (square) {
@@ -541,6 +581,7 @@ export class WorldState {
         loc.shape = shape;
         loc.angle = angle;
         loc.explicitAnim = false;
+        this.spins.delete(loc);
         // A changed loc plays its type's own anim from a random frame, like the client's addLoc.
         const seqId = id >= 0 ? this.locTypeLoader.load(id)?.seqId ?? -1 : -1;
         this.startAnim(loc, seqId, true);
@@ -555,12 +596,12 @@ export class WorldState {
         shape: number,
         angle: number,
         seqId: number,
-    ): void {
+    ): LocOverride | undefined {
         const layer = LOC_SHAPE_TO_LAYER[shape] ?? LOC_LAYER_GROUND;
         let loc = this.locs.get(getLocKey(x, z, level, layer));
         if (loc && loc.id === REMOVED_LOC) {
             // Nothing there to animate.
-            return;
+            return undefined;
         }
         const added = !loc;
         if (!loc) {
@@ -576,10 +617,11 @@ export class WorldState {
             // Not a seq we can play: leave the static loc alone.
             this.removeLoc(loc);
             zone.locs.delete(loc);
-            return;
+            return undefined;
         }
         // An explicit anim draws even an unchanged static loc dynamically.
         this.notifyLoc(loc);
+        return loc;
     }
 
     private startAnim(loc: LocOverride, seqId: number, randomFrame: boolean): void {
