@@ -150,6 +150,7 @@ export class MapManager<T extends MapSquare> {
         renderDistance: number,
         unloadDistance: number,
     ): void {
+        this.multiKey = "";
         const cameraX = camera.getPosX();
         const cameraZ = camera.getPosZ();
 
@@ -241,7 +242,118 @@ export class MapManager<T extends MapSquare> {
         this.renderBounds[3] = mapEndY;
     }
 
+    // Multi-view: keep the maps every camera needs loaded (nearest to any camera first) and
+    // unload the ones no camera is near. Visibility is then picked per camera with
+    // updateVisible().
+    private multiKey: string = "";
+
+    updateMulti(cameras: Camera[], renderDistance: number, unloadDistance: number): void {
+        const bounds: number[][] = [];
+        for (const camera of cameras) {
+            const cameraX = camera.getPosX();
+            const cameraZ = camera.getPosZ();
+            bounds.push([
+                Math.floor((cameraX - renderDistance) / Scene.MAP_SQUARE_SIZE),
+                Math.floor((cameraZ - renderDistance) / Scene.MAP_SQUARE_SIZE),
+                Math.ceil((cameraX + renderDistance) / Scene.MAP_SQUARE_SIZE),
+                Math.ceil((cameraZ + renderDistance) / Scene.MAP_SQUARE_SIZE),
+            ]);
+        }
+        const key = bounds.map((b) => b.join(",")).join(";");
+        if (key === this.multiKey) {
+            return;
+        }
+        this.multiKey = key;
+        this.renderBounds.fill(-1);
+
+        const wanted = new Map<number, number>();
+        cameras.forEach((camera, i) => {
+            const [startX, startY, endX, endY] = bounds[i];
+            for (let x = startX; x < endX; x++) {
+                for (let y = startY; y < endY; y++) {
+                    if (x < 0 || y < 0 || x >= MapManager.MAX_MAP_X || y >= MapManager.MAX_MAP_Y) {
+                        continue;
+                    }
+                    const mapId = getMapSquareId(x, y);
+                    if (this.invalidMapIds.has(mapId)) {
+                        continue;
+                    }
+                    const dist = getMapDistance(camera.getPosX(), camera.getPosZ(), x, y);
+                    const prev = wanted.get(mapId);
+                    if (prev === undefined || dist < prev) {
+                        wanted.set(mapId, dist);
+                    }
+                }
+            }
+        });
+
+        for (const map of Array.from(this.mapSquares.values())) {
+            const { mapX, mapY } = map;
+            const keep = bounds.some(
+                ([startX, startY, endX, endY]) =>
+                    mapX >= startX - unloadDistance &&
+                    mapX <= endX + unloadDistance &&
+                    mapY >= startY - unloadDistance &&
+                    mapY <= endY + unloadDistance,
+            );
+            if (!keep) {
+                this.removeMap(mapX, mapY);
+            }
+        }
+
+        this.multiWanted = Array.from(wanted.entries())
+            .sort((a, b) => a[1] - b[1])
+            .map((e) => e[0]);
+    }
+
+    private multiWanted: number[] = [];
+
+    // Queue loads for missing maps, nearest to any camera first.
+    loadMulti(): void {
+        for (const mapId of this.multiWanted) {
+            if (this.loadingMapIds.size > this.maxQueuedTasks) {
+                return;
+            }
+            if (!this.mapSquares.has(mapId)) {
+                this.loadMap(mapId >> 8, mapId & 0xff);
+            }
+        }
+    }
+
+    // The maps one camera sees, into visibleMaps.
+    updateVisible(camera: Camera, frameCount: number, renderDistance: number): void {
+        const cameraX = camera.getPosX();
+        const cameraZ = camera.getPosZ();
+        const mapStartX = Math.floor((cameraX - renderDistance) / Scene.MAP_SQUARE_SIZE);
+        const mapStartY = Math.floor((cameraZ - renderDistance) / Scene.MAP_SQUARE_SIZE);
+        const mapEndX = Math.ceil((cameraX + renderDistance) / Scene.MAP_SQUARE_SIZE);
+        const mapEndY = Math.ceil((cameraZ + renderDistance) / Scene.MAP_SQUARE_SIZE);
+        this.visibleMapCount = 0;
+        for (let x = mapStartX; x < mapEndX; x++) {
+            for (let y = mapStartY; y < mapEndY; y++) {
+                const mapSquare = this.mapSquares.get(getMapSquareId(x, y));
+                if (
+                    !mapSquare ||
+                    !this.isMapVisible(camera, x, y) ||
+                    !mapSquare.canRender(frameCount)
+                ) {
+                    continue;
+                }
+                this.visibleMaps[this.visibleMapCount++] = mapSquare;
+            }
+        }
+        this.visibleMaps.length = this.visibleMapCount;
+        // Nearest first, like update().
+        this.visibleMaps.sort(
+            (a, b) =>
+                getMapDistance(cameraX, cameraZ, a.mapX, a.mapY) -
+                getMapDistance(cameraX, cameraZ, b.mapX, b.mapY),
+        );
+    }
+
     cleanUp(): void {
+        this.multiKey = "";
+        this.multiWanted = [];
         this.renderBounds.fill(-1);
         this.clearMaps();
     }

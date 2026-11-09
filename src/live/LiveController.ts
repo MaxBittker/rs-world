@@ -8,12 +8,12 @@ import { IndexedSprite } from "../rs/sprite/IndexedSprite";
 import { LiveEntity, LivePlayer } from "./LiveEntity";
 import { LiveWorld } from "./LiveWorld";
 import { FeedStatus, WorldFeedClient } from "./WorldFeedClient";
-import { RosterPlayer } from "./protocol";
+import { FeedRoster, RosterPlayer } from "./protocol";
 
 // Tiles streamed around the camera; the engine caps a subscription at 384 x 384, which a radius
 // of 188 plus the grid padding fills exactly. Past that, players come from the roster instead.
 const MIN_AREA_RADIUS = 32;
-const MAX_AREA_RADIUS = 188;
+export const MAX_AREA_RADIUS = 188;
 // Re-subscribe only when the camera crosses an 8-tile grid line.
 const AREA_GRID = 8;
 
@@ -88,6 +88,7 @@ export class LiveController {
         seqTypeLoader: SeqTypeLoader,
         seqFrameLoader: SeqFrameLoader,
         spotAnimTypeLoader: TypeLoader<SpotAnimType> | undefined,
+        roster: boolean = true,
     ) {
         this.world = new LiveWorld(npcTypeLoader, seqTypeLoader, seqFrameLoader, spotAnimTypeLoader);
         this.feed = new WorldFeedClient(url, {
@@ -102,6 +103,10 @@ export class LiveController {
             },
             onRoster: (roster) => {
                 this.world.applyRoster(roster);
+                this.lastRoster = roster;
+                for (const listener of this.rosterListeners) {
+                    listener(roster);
+                }
                 this.version++;
             },
             onStatus: (status, error) => {
@@ -110,8 +115,15 @@ export class LiveController {
                 this.version++;
             },
         });
-        this.feed.setRoster(true);
+        // Multi-view panes share one roster subscription (see rosterListeners).
+        this.feed.setRoster(roster);
     }
+
+    rosterListeners: ((roster: FeedRoster) => void)[] = [];
+    lastRoster?: FeedRoster;
+
+    // Largest feed area radius in tiles; multi-view panes ask for less than a full view.
+    maxAreaRadius: number = MAX_AREA_RADIUS;
 
     stop(): void {
         this.feed.close();
@@ -144,7 +156,7 @@ export class LiveController {
 
         // Seeing further than the engine will stream: the half behind the camera is mostly off
         // screen, so slide the area forward, up to half its size (less when looking down).
-        const radius = clamp(renderDistance, MIN_AREA_RADIUS, MAX_AREA_RADIUS);
+        const radius = clamp(renderDistance, MIN_AREA_RADIUS, this.maxAreaRadius);
         const ahead = clamp(renderDistance - MAX_AREA_RADIUS, 0, MAX_AREA_RADIUS / 2) * Math.cos(camera.pitch * RS_TO_RADIANS);
         const yaw = (camera.yaw - 1024) * RS_TO_RADIANS;
         const centerX = camera.getPosX() - Math.sin(yaw) * ahead;

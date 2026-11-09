@@ -184,3 +184,72 @@
     height: 100%;
     pointer-events: none;
 }
+
+/* Multi-view panes (?multi=A,B,...): frames, name box and status over the shared GL canvas. */
+.multi-view {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.multi-pane {
+    position: absolute;
+    box-sizing: border-box;
+    outline: 1px solid rgba(0, 0, 0, 0.9);
+    overflow: hidden;
+}
+
+.multi-pane.active {
+    outline: 2px solid #ffcf3f;
+    outline-offset: -2px;
+    z-index: 1;
+}
+
+/* Bottom-left: the minimap and compass cover the top-left of the first view. */
+.multi-pane-label {
+    position: absolute;
+    left: 6px;
+    bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    pointer-events: auto;
+    font:
+        14px "OSRS Small",
+        sans-serif;
+}
+
+.multi-pane-label input {
+    width: 120px;
+    background: rgba(0, 0, 0, 0.55);
+    color: #ffff00;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    padding: 1px 4px;
+    font: inherit;
+}
+
+.multi-pane-status {
+    color: #ddd;
+    text-shadow: 1px 1px 0 #000;
+}
+
+.multi-pane-close {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    line-height: 16px;
+    background: rgba(0, 0, 0, 0.55);
+    color: #ff981f;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    cursor: pointer;
+    font: 16px sans-serif;
+}
+
+.multi-pane-close:hover {
+    color: #fff;
+    background: rgba(160, 0, 0, 0.8);
+}
+
+.live-add-view {
+    margin-left: 4px;
+}

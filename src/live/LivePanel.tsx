@@ -94,6 +94,21 @@ export function LivePanel({ mapViewer }: { mapViewer: MapViewer }): JSX.Element 
                 >
                     Reconnect
                 </button>
+                <button
+                    className="live-button live-add-view"
+                    title={
+                        mapViewer.canAddPane()
+                            ? "Add a view: split the screen and follow another player (click a view to select it)"
+                            : "At most 16 views"
+                    }
+                    disabled={!mapViewer.canAddPane()}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        mapViewer.addPane();
+                    }}
+                >
+                    + View
+                </button>
                 <span className="live-toggle">{collapsed ? "+" : "-"}</span>
             </div>
 

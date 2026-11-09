@@ -16,7 +16,8 @@ import { SeqFrameLoader } from "../rs/model/seq/SeqFrameLoader";
 import { Pathfinder } from "../rs/pathfinder/Pathfinder";
 import { TextureLoader } from "../rs/texture/TextureLoader";
 import { isTouchDevice } from "../util/DeviceUtil";
-import { LiveController, getDefaultFeedUrl } from "../live/LiveController";
+import { LiveController, MAX_AREA_RADIUS, getDefaultFeedUrl } from "../live/LiveController";
+import { MAX_PANES, MultiPane, MultiView } from "../live/MultiView";
 import { LoadedCache } from "./Caches";
 import { Camera, CameraView, ProjectionType } from "./Camera";
 import { InputManager } from "./InputManager";
@@ -93,6 +94,12 @@ export class MapViewer {
     live?: LiveController;
     followParam: string | undefined;
 
+    // Multi-view (?multi=A,B,C): one renderer, up to 16 panes each following a player.
+    multiNames?: string[];
+    multi?: MultiView;
+    // Pane view distance in tiles (?md=), smaller than a full view so 16 panes stay light.
+    multiRenderDistance: number = 48;
+
     constructor(
         readonly workerPool: RenderDataWorkerPool,
         public npcSpawns: NpcSpawn[],
@@ -129,6 +136,18 @@ export class MapViewer {
         if (this.liveParam !== undefined) {
             params["live"] = this.liveParam;
         }
+        if (this.multi) {
+            const multiParams: any = {
+                multi: this.multi.panes.map((p) => p.getName() ?? "").join(","),
+            };
+            if (this.liveParam !== undefined) {
+                multiParams["live"] = this.liveParam;
+            }
+            if (this.multiRenderDistance !== 48) {
+                multiParams["md"] = this.multiRenderDistance.toString();
+            }
+            return multiParams;
+        }
         const followName = this.live?.followName ?? this.live?.pendingFollow;
         if (followName) {
             params["follow"] = followName;
@@ -161,6 +180,20 @@ export class MapViewer {
                 this.liveUrl = url;
                 this.initLive();
             }
+        }
+
+        const multi = searchParams.get("multi");
+        if (multi !== null) {
+            const names = multi
+                .split(",")
+                .map((n) => n.trim())
+                .slice(0, MAX_PANES);
+            const md = parseInt(searchParams.get("md") ?? "");
+            if (md >= 16 && md <= 128) {
+                this.multiRenderDistance = md;
+            }
+            this.multiNames = names.length > 0 ? names : [""];
+            this.initLive();
         }
 
         const follow = searchParams.get("follow");
@@ -236,6 +269,8 @@ export class MapViewer {
     initLive(): void {
         this.live?.stop();
         this.live = undefined;
+        this.multi?.stop();
+        this.multi = undefined;
         // The live layer needs player kits/spotanims, only built for pre-dat2 (rs-sdk) caches.
         if (this.liveUrl && this.loaderFactory?.getIdkTypeLoader) {
             this.live = new LiveController(
@@ -250,9 +285,136 @@ export class MapViewer {
             }
             this.live.hitmarkSprites = this.loaderFactory.getHitmarkSprites?.() ?? [];
             this.live.headIconSprites = this.loaderFactory.getHeadIconSprites?.() ?? [];
+            const names = this.multiNames;
+            if (names && names.length > 0) {
+                if (names[0]) {
+                    this.live.pendingFollow = names[0];
+                }
+                for (const name of names.slice(1)) {
+                    this.addPane(name);
+                }
+                (this.multi as MultiView | undefined)?.setActive(0);
+                this.syncActivePane();
+            }
         }
         // Live npcs replace the static spawn list; without a feed, fall back to it.
         this.renderer.setLoadNpcs?.(!this.live);
+    }
+
+    canAddPane(): boolean {
+        return !!this.live && (this.multi?.panes.length ?? 1) < MAX_PANES;
+    }
+
+    // Splits the single view into panes, or adds one more. The new pane starts at the selected
+    // pane's camera and is selected, so the Live panel's list picks who it follows.
+    addPane(name?: string): void {
+        if (!this.live || !this.liveUrl || !this.canAddPane()) {
+            return;
+        }
+        if (!this.multi) {
+            const multi = new MultiView();
+            this.live.maxAreaRadius = this.multiRenderDistance;
+            multi.addPane(this.makePane(this.camera, this.live));
+            multi.setActive(0);
+            this.multi = multi;
+        }
+        const multi = this.multi;
+        const from = multi.panes[multi.active].camera;
+        const camera = new Camera(from.pos[0], from.pos[1], from.pos[2], from.pitch, from.yaw);
+        camera.projectionType = from.projectionType;
+        const live = new LiveController(
+            this.liveUrl,
+            this.npcTypeLoader,
+            this.seqTypeLoader,
+            this.seqFrameLoader,
+            this.loaderFactory.getSpotAnimTypeLoader?.(),
+            false,
+        );
+        live.hitmarkSprites = multi.panes[0].live.hitmarkSprites;
+        live.headIconSprites = multi.panes[0].live.headIconSprites;
+        live.maxAreaRadius = this.multiRenderDistance;
+        // Start from the roster we already have, so a typed name is found right away.
+        const roster = multi.panes[0].live.lastRoster;
+        if (roster) {
+            live.world.applyRoster(roster);
+        }
+        if (name) {
+            live.pendingFollow = name;
+        }
+        multi.addPane(this.makePane(camera, live));
+        multi.setActive(multi.panes.length - 1);
+        this.wireRoster();
+        this.syncActivePane();
+        this.updateSearchParams();
+    }
+
+    // Closes a pane; with one left, back to the single view (its feed keeps running).
+    removePane(pane: MultiPane): void {
+        const multi = this.multi;
+        if (!multi || multi.panes.length <= 1) {
+            return;
+        }
+        multi.removePane(pane);
+        pane.live.stop();
+        if (multi.panes.length === 1) {
+            const last = multi.panes[0];
+            (this.renderer as { leaveMultiMaps?(level?: number): void }).leaveMultiMaps?.(
+                last.level,
+            );
+            multi.detach();
+            this.multi = undefined;
+            last.live.maxAreaRadius = MAX_AREA_RADIUS;
+            last.live.rosterListeners.length = 0;
+            last.live.feed.setRoster(true);
+            this.camera = last.camera;
+            this.live = last.live;
+        } else {
+            this.wireRoster();
+            this.syncActivePane();
+        }
+        this.updateSearchParams();
+    }
+
+    // The selected pane is what the camera controls, the Live panel and click menus act on.
+    syncActivePane(): void {
+        const multi = this.multi;
+        if (!multi) {
+            return;
+        }
+        const pane = multi.panes[multi.active];
+        this.camera = pane.camera;
+        this.live = pane.live;
+    }
+
+    private makePane(camera: Camera, live: LiveController): MultiPane {
+        return new MultiPane(camera, live, {
+            rename: (pane, newName) => {
+                pane.live.unfollow();
+                pane.live.pendingFollow = newName || undefined;
+                this.updateSearchParams();
+            },
+            close: (pane) => this.removePane(pane),
+        });
+    }
+
+    // Only the first pane's feed subscribes to the roster; it hands each roster to the others.
+    private wireRoster(): void {
+        const multi = this.multi;
+        if (!multi) {
+            return;
+        }
+        multi.panes.forEach((pane, i) => {
+            pane.live.rosterListeners.length = 0;
+            pane.live.feed.setRoster(i === 0);
+        });
+        const source = multi.panes[0].live;
+        source.rosterListeners.push((roster) => {
+            for (const pane of multi.panes) {
+                if (pane.live !== source) {
+                    pane.live.world.applyRoster(roster);
+                }
+            }
+        });
     }
 
     /**

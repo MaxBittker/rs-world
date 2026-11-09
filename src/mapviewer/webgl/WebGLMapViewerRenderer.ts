@@ -24,8 +24,11 @@ import { LiveOverlay } from "../../live/LiveOverlay";
 import { createTextureArray } from "../../picogl/PicoTexture";
 import { MenuTargetType } from "../../rs/MenuEntry";
 import { Scene } from "../../rs/scene/Scene";
+import { SceneBuilder } from "../../rs/scene/SceneBuilder";
 import { isTouchDevice, isWebGL2Supported, pixelRatio } from "../../util/DeviceUtil";
 
+import { Camera } from "../Camera";
+import { MapManager } from "../MapManager";
 import { MapViewer } from "../MapViewer";
 import { MapViewerRenderer } from "../MapViewerRenderer";
 import { DrawRange, NULL_DRAW_RANGE } from "./DrawRange";
@@ -192,6 +195,13 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
     liveRenderer?: LiveEntityRenderer;
     liveRendererController?: LiveController;
     liveOverlay: LiveOverlay = new LiveOverlay();
+
+    // Multi-view: floors above the max level are left out when a map square is built, so panes
+    // whose players are on different floors need their own copies. One MapManager per level in
+    // use; the single view's manager (primaryMapManager) keeps this.maxLevel.
+    primaryMapManager?: MapManager<WebGLMapSquare>;
+    levelMapManagers: Map<number, MapManager<WebGLMapSquare>> = new Map();
+    levelLastUsed: Map<number, number> = new Map();
 
     constructor(public mapViewer: MapViewer) {
         super(mapViewer);
@@ -654,7 +664,11 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         };
     }
 
-    override async queueLoadMap(mapX: number, mapY: number): Promise<void> {
+    override async queueLoadMap(
+        mapX: number,
+        mapY: number,
+        level: number = this.maxLevel,
+    ): Promise<void> {
         const mapData = await this.mapViewer.workerPool.queueLoad<
             SdMapLoaderInput,
             SdMapData | undefined,
@@ -662,7 +676,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         >(this.dataLoader, {
             mapX,
             mapY,
-            maxLevel: this.maxLevel,
+            maxLevel: level,
             loadNpcs: this.loadNpcs,
             smoothTerrain: this.smoothTerrain,
             minimizeDrawCalls: !this.hasMultiDraw,
@@ -674,7 +688,63 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
                 this.mapsToLoad.push(mapData);
             }
         } else {
-            this.mapManager.addInvalidMap(mapX, mapY);
+            this.getMapManagerForLevel(level)?.addInvalidMap(mapX, mapY);
+        }
+    }
+
+    // The manager that holds squares built for this max level, if any.
+    getMapManagerForLevel(level: number): MapManager<WebGLMapSquare> | undefined {
+        if (!this.primaryMapManager) {
+            return level === this.maxLevel ? this.mapManager : undefined;
+        }
+        return this.levelMapManagers.get(level);
+    }
+
+    getOrCreateLevelMapManager(level: number): MapManager<WebGLMapSquare> {
+        let manager = this.levelMapManagers.get(level);
+        if (!manager) {
+            const created: MapManager<WebGLMapSquare> = new MapManager<WebGLMapSquare>(
+                this.mapViewer.workerPool.size * 2,
+                (mapX, mapY) =>
+                    this.queueLoadMap(
+                        mapX,
+                        mapY,
+                        this.levelMapManagers.get(level) === created ? level : this.maxLevel,
+                    ),
+            );
+            manager = created;
+            manager.init(
+                this.mapViewer.mapFileIndex,
+                SceneBuilder.fillEmptyTerrain(this.mapViewer.loadedCache.info),
+            );
+            this.levelMapManagers.set(level, manager);
+        }
+        return manager;
+    }
+
+    // Back to the single view: keep the primary manager, free the per-level copies.
+    leaveMultiMaps(keepLevel?: number): void {
+        if (!this.primaryMapManager) {
+            return;
+        }
+        // Keep the squares the remaining pane already has, rather than rebuilding them.
+        const keep = keepLevel !== undefined ? this.levelMapManagers.get(keepLevel) : undefined;
+        if (keep && keepLevel !== undefined) {
+            this.mapManager = keep;
+            this.maxLevel = keepLevel;
+        } else {
+            this.mapManager = this.primaryMapManager;
+        }
+        this.primaryMapManager = undefined;
+        for (const manager of this.levelMapManagers.values()) {
+            if (manager !== this.mapManager) {
+                manager.cleanUp();
+            }
+        }
+        this.levelMapManagers.clear();
+        this.levelLastUsed.clear();
+        if (this.liveRenderer) {
+            this.liveRenderer.mapManager = this.mapManager;
         }
     }
 
@@ -689,6 +759,10 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         time: number,
     ): void {
         const { mapX, mapY } = mapData;
+        const manager = this.getMapManagerForLevel(mapData.maxLevel);
+        if (!manager) {
+            return;
+        }
 
         this.mapViewer.setMapImageUrl(
             mapX,
@@ -699,7 +773,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         );
 
         const frameCount = this.stats.frameCount;
-        this.mapManager.addMap(
+        manager.addMap(
             mapX,
             mapY,
             WebGLMapSquare.load(
@@ -725,7 +799,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
     isValidMapData(mapData: SdMapData): boolean {
         return (
             mapData.cacheName === this.mapViewer.loadedCache.info.name &&
-            mapData.maxLevel === this.maxLevel &&
+            this.getMapManagerForLevel(mapData.maxLevel) !== undefined &&
             mapData.loadNpcs === this.loadNpcs &&
             mapData.smoothTerrain === this.smoothTerrain
         );
@@ -733,6 +807,9 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
 
     clearMaps(): void {
         this.mapManager.cleanUp();
+        for (const manager of this.levelMapManagers.values()) {
+            manager.cleanUp();
+        }
         this.mapsToLoad.clear();
     }
 
@@ -801,6 +878,14 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
     }
 
     override render(time: number, deltaTime: number, resized: boolean): void {
+        if (this.mapViewer.multi) {
+            this.renderMulti(time, deltaTime, resized);
+            return;
+        }
+        if (this.liveOverlay.canvas.style.display === "none") {
+            this.liveOverlay.canvas.style.display = "";
+        }
+        this.leaveMultiMaps();
         const showDebugTimer = this.mapViewer.inputManager.isKeyDown("KeyY");
 
         if (showDebugTimer) {
@@ -1060,6 +1145,308 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
             this.mapViewer.debugText = `Frame Time GL: ${this.timer.gpuTime.toFixed(
                 2,
             )}ms\n JS: ${this.timer.cpuTime.toFixed(2)}ms`;
+        }
+    }
+
+    // Multi-view: every pane is drawn into its own viewport of the one framebuffer, with its own
+    // camera and live world, sharing the loaded maps, textures and baked entity models.
+    renderMulti(time: number, deltaTime: number, resized: boolean): void {
+        const multi = this.mapViewer.multi!;
+        const frameCount = this.stats.frameCount;
+        const timeSec = time / 1000;
+
+        const tick = Math.floor(timeSec / 0.6);
+        const ticksElapsed = Math.min(tick - this.lastTick, 1);
+        if (ticksElapsed > 0) {
+            this.lastTick = tick;
+        }
+        const clientTick = Math.floor(timeSec / 0.02);
+        const clientTicksElapsed = Math.min(clientTick - this.lastClientTick, 50);
+        if (clientTicksElapsed > 0) {
+            this.lastClientTick = clientTick;
+        }
+
+        if (this.needsFramebufferUpdate) {
+            this.initFramebuffer();
+        }
+        if (
+            !this.mainProgram ||
+            !this.mainAlphaProgram ||
+            !this.npcProgram ||
+            !this.entityProgram ||
+            !this.sceneUniformBuffer ||
+            !this.framebuffer ||
+            !this.textureFramebuffer ||
+            !this.frameDrawCall ||
+            !this.interactFramebuffer ||
+            !this.textureArray ||
+            !this.textureMaterials
+        ) {
+            return;
+        }
+        if (resized || this.needsFramebufferResize) {
+            this.framebuffer.resize();
+            this.textureFramebuffer.resize();
+            this.interactFramebuffer.resize();
+            this.resolutionUni[0] = this.app.width;
+            this.resolutionUni[1] = this.app.height;
+            this.needsFramebufferResize = false;
+        }
+
+        // Pane frames and overlays live in the overlay container, above the GL canvas.
+        const container = this.liveOverlay.canvas.parentElement;
+        if (container) {
+            this.liveOverlay.canvas.style.display = "none";
+            multi.attach(this.canvas, container);
+        }
+        const cssWidth = this.canvas.clientWidth;
+        const cssHeight = this.canvas.clientHeight;
+        multi.layout(cssWidth, cssHeight);
+        const scaleX = this.app.width / Math.max(cssWidth, 1);
+        const scaleY = this.app.height / Math.max(cssHeight, 1);
+
+        const inputManager = this.mapViewer.inputManager;
+        this.mapViewer.syncActivePane();
+        const active = multi.panes[multi.active];
+
+        // Input drives the pane under the mouse, the same way it drives the single view.
+        const camera = active.camera;
+        const cameraX = camera.pos[0];
+        const cameraY = camera.pos[1];
+        const cameraZ = camera.pos[2];
+        this.handleInput(deltaTime);
+        const wheelDelta = inputManager.takeWheelDelta();
+        if (active.live.isFollowing()) {
+            if (
+                camera.pos[0] !== cameraX ||
+                camera.pos[1] !== cameraY ||
+                camera.pos[2] !== cameraZ
+            ) {
+                active.live.unfollow();
+            } else {
+                active.live.zoom(wheelDelta);
+            }
+        } else {
+            this.handleWheelInput(wheelDelta);
+        }
+
+        if (!this.liveRenderer) {
+            this.liveRenderer = new LiveEntityRenderer(
+                this.app,
+                this.entityProgram,
+                this.sceneUniformBuffer,
+                this.mapViewer.workerPool,
+                this.mapViewer.seqTypeLoader,
+                this.mapManager,
+                active.live.world,
+            );
+            this.liveRendererController = undefined;
+        }
+
+        if (!this.primaryMapManager) {
+            this.primaryMapManager = this.mapManager;
+            this.levelMapManagers.clear();
+            this.levelMapManagers.set(this.maxLevel, this.mapManager);
+        }
+
+        const renderDistance = this.mapViewer.multiRenderDistance;
+        const fogDepth = Math.max(this.fogDepth, renderDistance / 8);
+        const camerasByLevel = new Map<number, Camera[]>();
+        for (const pane of multi.panes) {
+            // Each pane hides the floors above its own player, like the single view's
+            // Follow Level; while the level is unknown (flying to them) keep the last one.
+            let level = this.manualMaxLevel;
+            if (this.followLevel && pane.live.isFollowing()) {
+                level = pane.live.getFollowedLevel() ?? pane.level ?? this.manualMaxLevel;
+            }
+            pane.level = level;
+            this.liveRenderer.mapManager = this.getOrCreateLevelMapManager(level);
+            pane.live.update(clientTicksElapsed, pane.camera, renderDistance, this.getLiveGroundY);
+            pane.camera.update(pane.rect.w * scaleX, pane.rect.h * scaleY);
+            const cameras = camerasByLevel.get(level) ?? [];
+            cameras.push(pane.camera);
+            camerasByLevel.set(level, cameras);
+        }
+        multi.updateStatus();
+
+        const now = performance.now();
+        for (const [level, cameras] of camerasByLevel) {
+            const manager = this.getOrCreateLevelMapManager(level);
+            manager.updateMulti(cameras, renderDistance, 1);
+            manager.loadMulti();
+            this.levelLastUsed.set(level, now);
+        }
+        // A level no pane has used for a while gives its squares back.
+        for (const [level, manager] of this.levelMapManagers) {
+            if (camerasByLevel.has(level)) {
+                continue;
+            }
+            const lastUsed = this.levelLastUsed.get(level) ?? 0;
+            if (
+                now - lastUsed > 10_000 &&
+                (manager.mapSquares.size > 0 || manager.loadingMapIds.size > 0)
+            ) {
+                manager.cleanUp();
+            }
+        }
+
+        const currInteractions = this.interactions[frameCount % this.interactions.length];
+        // Interactions resolve against the active pane (hover menus, click to follow).
+        this.mapManager = this.getOrCreateLevelMapManager(active.level ?? this.manualMaxLevel);
+        this.mapManager.updateVisible(active.camera, frameCount, renderDistance);
+        if (!inputManager.isPointerLock()) {
+            this.checkInteractions(currInteractions);
+        } else if (this.hoveredMapIds.size > 0) {
+            this.hoveredMapIds.clear();
+        }
+
+        if (this.cullBackFace) {
+            this.app.enable(PicoGL.CULL_FACE);
+        } else {
+            this.app.disable(PicoGL.CULL_FACE);
+        }
+        this.app.enable(PicoGL.DEPTH_TEST);
+        this.app.depthMask(true);
+        this.app.drawFramebuffer(this.framebuffer);
+        this.app.viewport(0, 0, this.app.width, this.app.height);
+        this.app.clearColor(0.0, 0.0, 0.0, 1.0);
+        this.app.clear();
+        this.gl.clearBufferfv(PicoGL.COLOR, 0, [0.07, 0.07, 0.07, 1]);
+
+        this.npcRenderCount = 0;
+        const npcDataTextureIndex = this.updateNpcDataTexture();
+        const npcDataTexture = this.npcDataTextureBuffer[npcDataTextureIndex];
+
+        this.app.enable(PicoGL.SCISSOR_TEST);
+        for (let i = 0; i < multi.panes.length; i++) {
+            const pane = multi.panes[i];
+            const r = pane.rect;
+            const vx = Math.round(r.x * scaleX);
+            const vy = Math.round((cssHeight - r.y - r.h) * scaleY);
+            const vw = Math.max(Math.round(r.w * scaleX), 1);
+            const vh = Math.max(Math.round(r.h * scaleY), 1);
+            this.app.viewport(vx, vy, vw, vh);
+            this.app.scissor(vx, vy, vw, vh);
+            this.gl.clearBufferfv(PicoGL.COLOR, 0, this.skyColor);
+
+            const paneCamera = pane.camera;
+            this.mapViewer.camera = paneCamera;
+            this.cameraPosUni[0] = paneCamera.getPosX();
+            this.cameraPosUni[1] = paneCamera.getPosZ();
+            this.sceneUniformBuffer
+                .set(0, paneCamera.viewProjMatrix as Float32Array)
+                .set(1, paneCamera.viewMatrix as Float32Array)
+                .set(2, paneCamera.projectionMatrix as Float32Array)
+                .set(3, this.skyColor as Float32Array)
+                .set(4, this.cameraPosUni as Float32Array)
+                .set(5, renderDistance as any)
+                .set(6, fogDepth as any)
+                .set(7, timeSec as any)
+                .set(8, this.brightness as any)
+                .set(9, this.colorBanding as any)
+                .set(10, this.mapViewer.isNewTextureAnim as any)
+                .update();
+
+            const paneLevel = pane.level ?? this.manualMaxLevel;
+            this.mapManager = this.getOrCreateLevelMapManager(paneLevel);
+            this.mapManager.updateVisible(paneCamera, frameCount, renderDistance);
+            this.tickPass(timeSec, i === 0 ? ticksElapsed : 0, i === 0 ? clientTicksElapsed : 0);
+
+            const liveRenderer = this.liveRenderer;
+            liveRenderer.world = pane.live.world;
+            liveRenderer.mapManager = this.mapManager;
+            liveRenderer.showPlayers = pane.live.options.showPlayers;
+            liveRenderer.showNpcs = pane.live.options.showNpcs;
+            liveRenderer.prepare(paneLevel, paneCamera, renderDistance);
+            pane.farLabels = liveRenderer.farLabels.slice();
+
+            this.app.disable(PicoGL.BLEND);
+            this.renderOpaquePass();
+            this.renderOpaqueNpcPass(npcDataTextureIndex, npcDataTexture);
+            liveRenderer.render(false, this.textureArray, this.textureMaterials, this.drawBound);
+            this.app.enable(PicoGL.BLEND);
+            this.renderTransparentPass();
+            this.renderTransparentNpcPass(npcDataTextureIndex, npcDataTexture);
+            liveRenderer.render(true, this.textureArray, this.textureMaterials, this.drawBound);
+        }
+        this.app.disable(PicoGL.SCISSOR_TEST);
+        this.app.viewport(0, 0, this.app.width, this.app.height);
+        this.mapViewer.camera = active.camera;
+        // Leave the selected pane's squares current: the minimap loads through this.mapManager,
+        // and loading through an unused level's manager would rebuild squares it then frees.
+        this.mapManager = this.getOrCreateLevelMapManager(active.level ?? this.manualMaxLevel);
+
+        this.app.readFramebuffer(this.framebuffer);
+        this.app.drawFramebuffer(this.textureFramebuffer);
+        this.gl.readBuffer(PicoGL.COLOR_ATTACHMENT0);
+        this.app.blitFramebuffer(PicoGL.COLOR_BUFFER_BIT);
+
+        if (!inputManager.isPointerLock()) {
+            const mouseX = inputManager.mouseX;
+            const mouseY = inputManager.mouseY;
+            if (mouseX !== -1 && mouseY !== -1) {
+                if (this.msaaEnabled) {
+                    this.app.drawFramebuffer(this.interactFramebuffer);
+                    this.gl.readBuffer(PicoGL.COLOR_ATTACHMENT1);
+                    this.app.blitFramebuffer(PicoGL.COLOR_BUFFER_BIT);
+                    this.app.readFramebuffer(this.interactFramebuffer);
+                    this.gl.readBuffer(PicoGL.COLOR_ATTACHMENT0);
+                } else {
+                    this.gl.readBuffer(PicoGL.COLOR_ATTACHMENT1);
+                }
+                currInteractions.read(
+                    this.gl,
+                    (mouseX * this.resolutionScale) | 0,
+                    (mouseY * this.resolutionScale) | 0,
+                );
+            }
+        }
+
+        this.app.disable(PicoGL.DEPTH_TEST);
+        this.app.depthMask(false);
+        this.app.disable(PicoGL.BLEND);
+        this.app.clearMask(PicoGL.COLOR_BUFFER_BIT | PicoGL.DEPTH_BUFFER_BIT);
+        this.app.clearColor(0.0, 0.0, 0.0, 1.0);
+        this.app.defaultDrawFramebuffer().clear();
+        if (this.frameFxaaDrawCall && this.fxaaEnabled) {
+            this.frameFxaaDrawCall.uniform("u_resolution", this.resolutionUni);
+            this.frameFxaaDrawCall.texture("u_frame", this.textureFramebuffer.colorAttachments[0]);
+            this.frameFxaaDrawCall.draw();
+        } else {
+            this.frameDrawCall.texture("u_frame", this.textureFramebuffer.colorAttachments[0]);
+            this.frameDrawCall.draw();
+        }
+
+        for (const pane of multi.panes) {
+            pane.overlay.draw(
+                pane.live,
+                pane.camera,
+                this.getLiveGroundY,
+                pane.level ?? this.manualMaxLevel,
+                renderDistance,
+                fogDepth,
+                pane.farLabels,
+            );
+        }
+
+        // Several panes can each be waiting on maps; build a couple per frame.
+        for (let n = 0; n < 2; n++) {
+            const mapData = this.mapsToLoad.shift();
+            if (!mapData) {
+                break;
+            }
+            if (this.isValidMapData(mapData)) {
+                this.loadMap(
+                    this.mainProgram,
+                    this.mainAlphaProgram,
+                    this.npcProgram,
+                    this.textureArray,
+                    this.textureMaterials,
+                    this.sceneUniformBuffer,
+                    mapData,
+                    timeSec,
+                );
+            }
         }
     }
 
@@ -1354,6 +1741,29 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         }
     }
 
+    // "View": open a new multi-view pane following this player (splits the single view).
+    addViewMenuEntry(
+        menuEntries: OsrsMenuEntry[],
+        id: number,
+        name: string,
+        combatLevel: number,
+    ): void {
+        if (!this.mapViewer.canAddPane()) {
+            return;
+        }
+        menuEntries.push({
+            option: "View",
+            targetId: id,
+            targetType: MenuTargetType.PLAYER,
+            targetName: name,
+            targetLevel: combatLevel,
+            onClick: () => {
+                this.mapViewer.closeMenu();
+                this.mapViewer.addPane(name);
+            },
+        });
+    }
+
     checkInteractions(interactions: Interactions): void {
         const interactReady = interactions.check(
             this.gl,
@@ -1508,6 +1918,12 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
                                         this.mapViewer.closeMenu();
                                     },
                                 });
+                                this.addViewMenuEntry(
+                                    menuEntries,
+                                    far.slot,
+                                    far.name,
+                                    far.combatLevel,
+                                );
                             }
                             continue;
                         }
@@ -1522,6 +1938,12 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
                                 this.mapViewer.closeMenu();
                             },
                         });
+                        this.addViewMenuEntry(
+                            menuEntries,
+                            player.id,
+                            player.name,
+                            player.combatLevel,
+                        );
                         continue;
                     }
 

@@ -21,6 +21,11 @@ new. See [DESIGN.md](DESIGN.md) for how it works.
   While following, drag (or the arrow keys) orbits the player and the wheel zooms; moving the camera
   (WASD, Q/E, right-drag) stops following. Otherwise the wheel flies the camera forward and back.
   Zooming out sees further and streams more of the world.
+- **Multi-view**: watch up to 16 players at once. **+ View** in the Live panel (or right-click a
+  player → View) splits the screen; each view follows its own player, with a name box and **×** in
+  its bottom-left corner. Click a view to select it: the Live panel, keys, drag and wheel then act on
+  that view. Closing views down to one returns to the normal single view. All views share one WebGL
+  renderer, cache, worker pool, map squares and baked models, so 16 views cost far less than 16 tabs.
 - **Pan**: right-drag slides the camera over the ground. A right click without dragging opens the menu.
 - **World map**: every online player as a dot (white, your followed player orange). Click one to fly there.
 
@@ -58,6 +63,8 @@ That only works if that server runs with `WORLD_FEED=true`.
 | ---------------------- | --------------------------------------------------------------------------- |
 | `live=<ws url>`        | World feed to stream (URL-encode it if it carries `?token=`). `off` disables it. |
 | `follow=<name>`        | Fly to a player and keep following them.                                    |
+| `multi=<a,b,...>`      | Open multi-view with up to 16 players (an empty name leaves a view free).  |
+| `md=<tiles>`           | Multi-view distance per view, 16-128 (default 48).                          |
 | `cx cy cz p y v=1`     | Camera position, pitch and yaw, same as osrs.world.                         |
 
 The Live panel (bottom right) shows connection state, the online count and every player (scroll for more). Info, under

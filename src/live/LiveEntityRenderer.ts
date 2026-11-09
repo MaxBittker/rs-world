@@ -121,8 +121,8 @@ export class LiveEntityRenderer {
         readonly sceneUniformBuffer: UniformBuffer,
         readonly workerPool: RenderDataWorkerPool,
         readonly seqTypeLoader: SeqTypeLoader,
-        readonly mapManager: MapManager<WebGLMapSquare>,
-        readonly world: LiveWorld,
+        public mapManager: MapManager<WebGLMapSquare>,
+        public world: LiveWorld,
     ) {}
 
     // Ground height at a fine coord in the RS convention (negative is up), or undefined when the
