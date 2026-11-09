@@ -249,6 +249,7 @@ export class MapViewer {
                 this.live.pendingFollow = this.followParam;
             }
             this.live.hitmarkSprites = this.loaderFactory.getHitmarkSprites?.() ?? [];
+            this.live.headIconSprites = this.loaderFactory.getHeadIconSprites?.() ?? [];
         }
         // Live npcs replace the static spawn list; without a feed, fall back to it.
         this.renderer.setLoadNpcs?.(!this.live);

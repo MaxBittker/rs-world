@@ -31,6 +31,9 @@ const HITMARK_OFFSETS: [number, number][] = [
     [15, -10],
 ];
 
+// Overhead icons stack in 25px steps, from 30px above the health bar anchor, like the client.
+const HEAD_ICON_STEP = 25;
+
 type ScreenPos = { x: number; y: number };
 
 type OverlayEntity = {
@@ -46,6 +49,8 @@ type OverlayEntity = {
     chatY?: number;
     combat: boolean;
     hitmarks: boolean;
+    // headicons sprite indices, top to bottom.
+    headIcons: number[];
 };
 
 type FarName = {
@@ -67,6 +72,8 @@ export class LiveOverlay {
     // The cache's hitmark sprites as canvases, rebuilt when the controller's sprites change.
     private hitmarkSource?: IndexedSprite[];
     private hitmarks: HTMLCanvasElement[] = [];
+    private headIconSource?: IndexedSprite[];
+    private headIcons: HTMLCanvasElement[] = [];
 
     private grid: Uint8Array = new Uint8Array(0);
     private gridCols: number = 0;
@@ -132,7 +139,8 @@ export class LiveOverlay {
             const combat = near && options.showCombat && e.combatCycle > loopCycle + 100 && e.totalHealth > 0;
             const chat = near && options.showChat && e.chatMessage !== null && e.chatTimer > 0;
             const hitmarks = near && options.showCombat && e.damageCycles.some((cycle) => cycle > loopCycle);
-            if (!showName && !combat && !chat && !hitmarks) {
+            const headIcons = near ? getHeadIcons(e) : [];
+            if (!showName && !combat && !chat && !hitmarks && headIcons.length === 0) {
                 continue;
             }
 
@@ -160,6 +168,7 @@ export class LiveOverlay {
                 chatY: chat ? head.y : undefined,
                 combat,
                 hitmarks,
+                headIcons,
             });
         }
 
@@ -228,6 +237,12 @@ export class LiveOverlay {
             const o = overlays[i];
             if (o.name) {
                 this.drawText(o.name, o.top.x, o.nameY, o.nameColour, o.nameAlpha);
+            }
+        }
+        for (let i = overlays.length - 1; i >= 0; i--) {
+            const o = overlays[i];
+            if (o.headIcons.length > 0) {
+                this.drawHeadIcons(controller, o);
             }
         }
         for (let i = overlays.length - 1; i >= 0; i--) {
@@ -367,6 +382,31 @@ export class LiveOverlay {
         }
     }
 
+    // Client.drawEntityOverlays: each icon at (x - 12, y - 30), the next 25px lower. Names and
+    // chat are ours, not the client's, so the stack moves up to sit above them when they're shown.
+    private drawHeadIcons(controller: LiveController, o: OverlayEntity): void {
+        if (this.headIconSource !== controller.headIconSprites) {
+            this.headIconSource = controller.headIconSprites;
+            this.headIcons = controller.headIconSprites.map(spriteToCanvas);
+        }
+        let ceiling = Infinity;
+        if (o.name) {
+            ceiling = o.nameY - 13;
+        }
+        if (o.chatY !== undefined) {
+            ceiling = Math.min(ceiling, o.chatY - 14);
+        }
+        const x = Math.round(o.top.x) - 12;
+        let y = Math.round(Math.min(o.top.y - 30, ceiling - o.headIcons.length * HEAD_ICON_STEP));
+        for (const icon of o.headIcons) {
+            const sprite = this.headIcons[icon];
+            if (sprite) {
+                this.ctx.drawImage(sprite, x, y);
+            }
+            y += HEAD_ICON_STEP;
+        }
+    }
+
     private getHitmark(controller: LiveController, type: number): HTMLCanvasElement | undefined {
         if (this.hitmarkSource !== controller.hitmarkSprites) {
             this.hitmarkSource = controller.hitmarkSprites;
@@ -416,6 +456,26 @@ function getFogVisibility(dx: number, dz: number, renderDistance: number, fogDep
 function formatNpcName(npc: LiveNpc): string {
     const level = npc.getCombatLevel();
     return level > 0 ? `${npc.getName()} (level-${level})` : npc.getName();
+}
+
+// The overhead icons the client draws for an entity: a player's headicons bits (protect from
+// melee/missiles/magic, retribution, smite, redemption, skull...) or an npc type's icon.
+function getHeadIcons(e: LiveEntity): number[] {
+    const icons: number[] = [];
+    if (e instanceof LivePlayer) {
+        const bits = e.appearance?.headIcons ?? 0;
+        for (let icon = 0; icon < 8; icon++) {
+            if ((bits & (1 << icon)) !== 0) {
+                icons.push(icon);
+            }
+        }
+    } else if (e instanceof LiveNpc) {
+        const icon = e.npcType?.headIconPrayer ?? -1;
+        if (icon >= 0) {
+            icons.push(icon);
+        }
+    }
+    return icons;
 }
 
 // Palette sprite -> canvas at its full size, sub-image at its crop offset (index 0 is clear),

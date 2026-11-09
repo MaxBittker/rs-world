@@ -79,6 +79,8 @@ export class LiveController {
 
     // The client's hitmark sprites (media archive "hitmarks"), indexed by damage type.
     hitmarkSprites: IndexedSprite[] = [];
+    // The client's overhead icons (media archive "headicons"): prayers, skull, hint arrow.
+    headIconSprites: IndexedSprite[] = [];
 
     constructor(
         readonly url: string,

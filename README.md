@@ -13,7 +13,8 @@ new. See [DESIGN.md](DESIGN.md) for how it works.
 
 - **The world as the server packs it**: rev 289 terrain, locs and models from rs-sdk's cache.
 - **Live players**: each player's real body (identity kits, colours and worn items), walking, running,
-  combat and skilling animations, overhead chat, hitsplats and health bars.
+  combat and skilling animations, overhead chat, hitsplats, health bars, and overhead prayers and
+  skulls.
 - **Live npcs**: every npc in view with its server-side movement, animations, overhead text and combat.
 - **Follow a player**: right-click a player → Follow, pick them in the Live panel, or open `?follow=<name>`.
   `[` and `]` (or Prev/Next in the panel) step to the previous and next player in the list.

@@ -112,6 +112,10 @@ export class LegacyCacheLoaderFactory implements CacheLoaderFactory {
         return loadMapSprites(this.mediaArchive, "hitmarks");
     }
 
+    getHeadIconSprites(): IndexedSprite[] {
+        return loadMapSprites(this.mediaArchive, "headicons");
+    }
+
     getSpotAnimTypeLoader(): TypeLoader<SpotAnimType> {
         return DatTypeLoader.load(SpotAnimType, this.cacheInfo, this.configArchive, "spotanim");
     }
