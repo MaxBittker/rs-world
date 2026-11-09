@@ -21,6 +21,7 @@ import { LiveController } from "../../live/LiveController";
 import { LiveEntity } from "../../live/LiveEntity";
 import { LiveEntityRenderer } from "../../live/LiveEntityRenderer";
 import { LiveOverlay } from "../../live/LiveOverlay";
+import { WorldStateMaps } from "../../live/WorldStateMaps";
 import { createTextureArray } from "../../picogl/PicoTexture";
 import { MenuTargetType } from "../../rs/MenuEntry";
 import { Scene } from "../../rs/scene/Scene";
@@ -28,6 +29,7 @@ import { isTouchDevice, isWebGL2Supported, pixelRatio } from "../../util/DeviceU
 
 import { MapViewer } from "../MapViewer";
 import { MapViewerRenderer } from "../MapViewerRenderer";
+import { MapManager } from "../MapManager";
 import { DrawRange, NULL_DRAW_RANGE } from "./DrawRange";
 import { InteractType } from "./InteractType";
 import { Interactions } from "./Interactions";
@@ -191,6 +193,9 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
     // Live world feed entities
     liveRenderer?: LiveEntityRenderer;
     liveRendererController?: LiveController;
+    // Applies the zone state (locs, ground objs, projectiles, map anims) to the map squares.
+    worldStateMaps?: WorldStateMaps;
+    private worldStateManagers: MapManager<WebGLMapSquare>[] = [];
     liveOverlay: LiveOverlay = new LiveOverlay();
 
     constructor(public mapViewer: MapViewer) {
@@ -699,25 +704,23 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         );
 
         const frameCount = this.stats.frameCount;
-        this.mapManager.addMap(
-            mapX,
-            mapY,
-            WebGLMapSquare.load(
-                this.mapViewer.seqTypeLoader,
-                this.mapViewer.npcTypeLoader,
-                this.mapViewer.basTypeLoader,
-                this.app,
-                mainProgram,
-                mainAlphaProgram,
-                npcProgram,
-                textureArray,
-                textureMaterials,
-                sceneUniformBuffer,
-                mapData,
-                time,
-                frameCount,
-            ),
+        const square = WebGLMapSquare.load(
+            this.mapViewer.seqTypeLoader,
+            this.mapViewer.npcTypeLoader,
+            this.mapViewer.basTypeLoader,
+            this.app,
+            mainProgram,
+            mainAlphaProgram,
+            npcProgram,
+            textureArray,
+            textureMaterials,
+            sceneUniformBuffer,
+            mapData,
+            time,
+            frameCount,
         );
+        this.mapManager.addMap(mapX, mapY, square);
+        this.worldStateMaps?.onSquareLoaded(square);
 
         this.updateTextureArray(mapData.loadedTextures);
     }
@@ -875,6 +878,7 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
         }
 
         this.updateLive(clientTicksElapsed);
+        this.updateWorldState();
         this.updateFollowLevel();
         this.updateRenderDistance(deltaTime);
 
@@ -1098,6 +1102,23 @@ export class WebGLMapViewerRenderer extends MapViewerRenderer<WebGLMapSquare> {
             this.getLiveGroundY,
         );
         return live;
+    }
+
+    // Once per frame: steps the shared zone state and hands it to the entity renderer.
+    updateWorldState(): void {
+        if (!this.worldStateMaps) {
+            this.worldStateMaps = new WorldStateMaps(this.gl, () => this.worldStateManagers);
+        }
+        // The manager holding the loaded squares.
+        const managers = this.worldStateManagers;
+        managers.length = 0;
+        managers.push(this.mapManager);
+        this.worldStateMaps.update(
+            this.mapViewer.worldState,
+            this.liveRenderer,
+            this.mapViewer.locTypeLoader,
+            this.mapViewer.objTypeLoader,
+        );
     }
 
     tickPass(time: number, ticksElapsed: number, clientTicksElapsed: number): void {

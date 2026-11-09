@@ -2,6 +2,7 @@ import { CollisionData } from "../../../rs/scene/CollisionMap";
 import { DrawRange } from "../DrawRange";
 import { LocAnimatedData } from "../loc/LocAnimatedData";
 import { NpcData } from "../npc/NpcData";
+import { SdLocTable } from "./SdLocTable";
 
 export type SdMapData = {
     mapX: number;
@@ -52,6 +53,8 @@ export type SdMapData = {
 
     locsAnimated: LocAnimatedData[];
     npcs: NpcData[];
+
+    locTable: SdLocTable;
 
     loadedTextures: Map<number, Int32Array>;
 };

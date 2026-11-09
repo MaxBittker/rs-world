@@ -8,6 +8,7 @@ import { IndexedSprite } from "../rs/sprite/IndexedSprite";
 import { LiveEntity, LivePlayer } from "./LiveEntity";
 import { LiveWorld } from "./LiveWorld";
 import { FeedStatus, WorldFeedClient } from "./WorldFeedClient";
+import { WorldState } from "./WorldState";
 import { RosterPlayer } from "./protocol";
 
 // Tiles streamed around the camera; the engine caps a subscription at 384 x 384, which a radius
@@ -45,6 +46,7 @@ export type LiveOptions = {
 export class LiveController {
     readonly world: LiveWorld;
     readonly feed: WorldFeedClient;
+    readonly feedId: number;
 
     status: FeedStatus = "closed";
     error?: string;
@@ -88,16 +90,26 @@ export class LiveController {
         seqTypeLoader: SeqTypeLoader,
         seqFrameLoader: SeqFrameLoader,
         spotAnimTypeLoader: TypeLoader<SpotAnimType> | undefined,
+        // Shared store for zone state (locs, objs, projectiles); this feed's zones go into it.
+        readonly worldState?: WorldState,
     ) {
         this.world = new LiveWorld(npcTypeLoader, seqTypeLoader, seqFrameLoader, spotAnimTypeLoader);
+        this.feedId = worldState?.newFeedId() ?? 0;
         this.feed = new WorldFeedClient(url, {
-            onHello: () => {
+            onHello: (hello) => {
                 this.world.clear();
                 this.world.far.clear();
+                // A new connection sends its area (za) and that area's state again.
+                this.worldState?.onHello(this.feedId, hello.tick);
                 this.version++;
             },
             onTick: (tick) => {
                 this.world.applyTick(tick);
+                if (tick.w) {
+                    // A reset comes with its own za (r = 1).
+                    this.worldState?.apply(this.feedId, tick.k, this.world, tick.w);
+                }
+                this.worldState?.advanceSpins(tick.k);
                 this.version++;
             },
             onRoster: (roster) => {
@@ -116,6 +128,7 @@ export class LiveController {
     stop(): void {
         this.feed.close();
         this.world.clear();
+        this.worldState?.dropFeed(this.feedId);
     }
 
     reconnect(): void {

@@ -165,7 +165,8 @@ export class WorldFeedClient {
 
     private sendArea(): void {
         if (this.area) {
-            this.send({ t: "sub", ...this.area });
+            // zones: ask for the zone records (fires, items, projectiles); they are opt-in.
+            this.send({ t: "sub", ...this.area, zones: true });
         }
     }
 

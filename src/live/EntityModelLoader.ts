@@ -1,7 +1,10 @@
 import { TypeLoader } from "../rs/config/TypeLoader";
 import { IdkType } from "../rs/config/idktype/IdkType";
+import { LocModelLoader } from "../rs/config/loctype/LocModelLoader";
+import { LocModelType } from "../rs/config/loctype/LocModelType";
 import { NpcModelLoader } from "../rs/config/npctype/NpcModelLoader";
 import { NpcTypeLoader } from "../rs/config/npctype/NpcTypeLoader";
+import { ObjModelLoader } from "../rs/config/objtype/ObjModelLoader";
 import { ObjType } from "../rs/config/objtype/ObjType";
 import { ObjTypeLoader } from "../rs/config/objtype/ObjTypeLoader";
 import { SeqTypeLoader } from "../rs/config/seqtype/SeqTypeLoader";
@@ -19,7 +22,11 @@ import { PLAYER_RECOL_1D, PLAYER_RECOL_2D, PlayerAppearance } from "./PlayerAppe
 export type EntityModelSpec =
     | { kind: "npc"; npcType: number }
     | { kind: "player"; appearance: PlayerAppearance; leftHand: number; rightHand: number }
-    | { kind: "spot"; spotAnim: number };
+    | { kind: "spot"; spotAnim: number }
+    // A loc by shape and angle as the zone protocol sends it, origin at its centre on the ground.
+    | { kind: "loc"; loc: number; shape: number; angle: number }
+    // A ground obj (count already resolved to its count variant).
+    | { kind: "obj"; obj: number };
 
 export type EntityAnimRequest = {
     key: string;
@@ -52,6 +59,8 @@ export class EntityModelLoader {
         readonly modelLoader: ModelLoader,
         readonly textureLoader: TextureLoader,
         readonly npcModelLoader: NpcModelLoader,
+        readonly locModelLoader?: LocModelLoader,
+        readonly objModelLoader?: ObjModelLoader,
     ) {}
 
     bake(request: EntityAnimRequest, textureIdIndexMap: Map<number, number>): EntityAnimData {
@@ -115,6 +124,51 @@ export class EntityModelLoader {
             }
             case "spot":
                 return this.getSpotAnimModel(spec.spotAnim, seqId, frame);
+            case "loc":
+                return this.getLocModel(spec.loc, spec.shape, spec.angle, seqId, frame);
+            case "obj":
+                return this.objModelLoader?.getModel(spec.obj, 1);
+        }
+    }
+
+    // Like SceneBuilder.addLoc: which model type and rotation each shape draws with. Wall
+    // decoration is drawn on the wall line (without the displacement off the wall).
+    getLocModel(
+        id: number,
+        shape: number,
+        angle: number,
+        seqId: number,
+        frame: number,
+    ): Model | undefined {
+        const loader = this.locModelLoader;
+        if (!loader) {
+            return undefined;
+        }
+        const locType = loader.locTypeLoader.load(id);
+        if (!locType) {
+            return undefined;
+        }
+        const get = (type: LocModelType, rotation: number) =>
+            loader.getModelAnimated(locType, type, rotation, seqId, frame);
+        switch (shape) {
+            case LocModelType.NORMAL_DIAGIONAL:
+                return get(LocModelType.NORMAL, angle + 4);
+            case LocModelType.WALL_CORNER:
+                return mergeModels(get(shape, angle + 4), get(shape, (angle + 1) & 3));
+            case LocModelType.WALL_DECORATION_INSIDE:
+            case LocModelType.WALL_DECORATION_OUTSIDE:
+                return get(LocModelType.WALL_DECORATION_INSIDE, angle);
+            case LocModelType.WALL_DECORATION_DIAGONAL_OUTSIDE:
+                return get(LocModelType.WALL_DECORATION_INSIDE, angle + 4);
+            case LocModelType.WALL_DECORATION_DIAGONAL_INSIDE:
+                return get(LocModelType.WALL_DECORATION_INSIDE, ((angle + 2) & 3) + 4);
+            case LocModelType.WALL_DECORATION_DIAGONAL_DOUBLE:
+                return mergeModels(
+                    get(LocModelType.WALL_DECORATION_INSIDE, angle + 4),
+                    get(LocModelType.WALL_DECORATION_INSIDE, ((angle + 2) & 3) + 4),
+                );
+            default:
+                return get(shape, angle);
         }
     }
 
@@ -266,6 +320,13 @@ export class EntityModelLoader {
     clearCache(): void {
         this.bodyCache.clear();
     }
+}
+
+function mergeModels(a: Model | undefined, b: Model | undefined): Model | undefined {
+    if (!a || !b) {
+        return a ?? b;
+    }
+    return Model.merge([a, b], 2);
 }
 
 function getModelHeight(model: Model): number {

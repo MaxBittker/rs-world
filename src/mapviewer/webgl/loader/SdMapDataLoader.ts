@@ -29,6 +29,7 @@ import { SceneLocEntity } from "../loc/SceneLocEntity";
 import { getSceneLocs, isLowDetail } from "../loc/SceneLocs";
 import { createNpcDatas } from "../npc/NpcData";
 import { NpcSpawnGroup } from "../npc/NpcSpawnGroup";
+import { SdLocTable, createLocTable } from "./SdLocTable";
 import { SdMapData } from "./SdMapData";
 import { SdMapLoaderInput } from "./SdMapLoaderInput";
 
@@ -637,6 +638,17 @@ export class SdMapDataLoader implements RenderDataLoader<SdMapLoaderInput, SdMap
 
         const heightMapTextureData = loadHeightMapTextureData(scene);
 
+        const locTable: SdLocTable = createLocTable(locTypeLoader, sceneBuf, borderSize, [
+            sceneBuf.drawCommands,
+            sceneBuf.drawCommandsAlpha,
+            sceneBuf.drawCommandsLod,
+            sceneBuf.drawCommandsLodAlpha,
+            sceneBuf.drawCommandsInteract,
+            sceneBuf.drawCommandsInteractAlpha,
+            sceneBuf.drawCommandsInteractLod,
+            sceneBuf.drawCommandsInteractLodAlpha,
+        ]);
+
         const vertices = sceneBuf.vertexBuf.byteArray();
         const indices = new Int32Array(sceneBuf.indices);
 
@@ -680,6 +692,12 @@ export class SdMapDataLoader implements RenderDataLoader<SdMapLoaderInput, SdMap
 
             modelTextureDataInteractLod.buffer,
             modelTextureDataInteractLodAlpha.buffer,
+
+            locTable.keys.buffer,
+            locTable.info.buffer,
+            locTable.refStart.buffer,
+            locTable.refs.buffer,
+            locTable.rangeIndices.buffer,
         ];
 
         const totalBytes = transferables.reduce((sum, buf) => sum + buf.byteLength, 0);
@@ -739,6 +757,8 @@ export class SdMapDataLoader implements RenderDataLoader<SdMapLoaderInput, SdMap
 
                 locsAnimated,
                 npcs,
+
+                locTable,
 
                 loadedTextures,
             },
