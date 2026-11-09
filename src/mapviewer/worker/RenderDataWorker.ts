@@ -165,6 +165,8 @@ async function initWorker(cache: LoadedCache, npcSpawns: NpcSpawn[]): Promise<Wo
                 skeletalSeqLoader,
                 varManager,
             ),
+            locModelLoader,
+            objModelLoader,
         );
     }
 

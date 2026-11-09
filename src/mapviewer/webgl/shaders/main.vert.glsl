@@ -55,6 +55,8 @@ struct ModelInfo {
     float contourGround;
     uint interactType;
     uint interactId;
+    // A static loc hidden by live zone state (both coords 0xFFFF, see WebGLMapSquare).
+    bool hidden;
 };
 
 ivec2 getDataTexCoordFromIndex(int index) {
@@ -73,6 +75,7 @@ ModelInfo decodeModelInfo(int offset) {
     info.contourGround = float((data.g >> 14) & 0x3u);
     info.interactType = (data.b >> 4) & 0x3u;
     info.interactId = data.a | (((data.b >> 3u) & 0x1u) << 16u);
+    info.hidden = data.r == 0xFFFFu && data.g == 0xFFFFu;
 
     return info;
 }
@@ -136,4 +139,8 @@ void main() {
     // gl_Position.z += (float(vertex.priority)) * 0.0007;
     gl_Position.z += float(modelInfo.plane) * 0.005 + (float(vertex.priority) + float(modelInfo.priority)) * 0.0007;
     gl_Position = u_projectionMatrix * gl_Position;
+    if (modelInfo.hidden) {
+        // Outside the clip volume: the whole instance is culled.
+        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    }
 }
