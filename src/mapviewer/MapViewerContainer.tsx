@@ -50,6 +50,8 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
     const [fps, setFps] = useState(0);
     const [cameraYaw, setCameraYaw] = useState(mapViewer.camera.getYaw());
     const [isWorldMapOpen, setWorldMapOpen] = useState<boolean>(false);
+    // With several views the minimap would cover the top-left one, so it's hidden.
+    const [isMultiView, setMultiView] = useState<boolean>(false);
 
     const [menuProps, setMenuProps] = useState<OsrsMenuProps | undefined>(undefined);
 
@@ -73,6 +75,8 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
             mapViewer.needsSearchParamUpdate = false;
             console.log("Updated search params");
         }
+
+        setMultiView(!!mapViewer.multi);
 
         if (!hideUi) {
             setFps(Math.round(renderer.stats.frameTimeFps));
@@ -198,13 +202,15 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
             {!hideUi && (
                 <span>
                     <div className="hud left-top">
-                        <MinimapContainer
-                            yawDegrees={(2047 - cameraYaw) * RS_TO_DEGREES}
-                            onCompassClick={resetCameraYaw}
-                            onWorldMapClick={openWorldMap}
-                            getPosition={getMapPosition}
-                            loadMapImageUrl={loadMinimapImageUrl}
-                        />
+                        {!isMultiView && (
+                            <MinimapContainer
+                                yawDegrees={(2047 - cameraYaw) * RS_TO_DEGREES}
+                                onCompassClick={resetCameraYaw}
+                                onWorldMapClick={openWorldMap}
+                                getPosition={getMapPosition}
+                                loadMapImageUrl={loadMinimapImageUrl}
+                            />
+                        )}
 
                         <div className="fps-counter content-text">{fps}</div>
                         <div className="fps-counter content-text">{mapViewer.debugText}</div>
