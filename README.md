@@ -58,6 +58,11 @@ That only works if that server runs with `WORLD_FEED=true`.
 | ---------------------- | --------------------------------------------------------------------------- |
 | `live=<ws url>`        | World feed to stream (URL-encode it if it carries `?token=`). `off` disables it. |
 | `follow=<name>`        | Fly to a player and keep following them.                                    |
+| `embed=1`              | For a frame in another page: hides the panels, the minimap, the fps counter and the joysticks, and frames the followed player from 20 tiles out. |
+| `fps=<n>`              | Frame rate cap.                                                             |
+| `scale=<0-1>`          | Render resolution scale. `0.5` draws a quarter of the pixels.               |
+| `hideNames=<a,b>`      | Players whose nameplates are never drawn.                                   |
+| `hideNamesFrom=<url>`  | The same list as a JSON array, fetched with CORS.                           |
 | `cx cy cz p y v=1`     | Camera position, pitch and yaw, same as osrs.world.                         |
 
 The Live panel (bottom right) shows connection state, the online count and every player (scroll for more). Info, under
@@ -70,6 +75,16 @@ iPhone and iPad browsers can load the viewer when WebGL2 is available. Touch con
 two joysticks and dragging on the scene. On mobile, the player list and Info button sit at the
 top right, and the render settings menu is hidden. Browsers without shared memory use one worker with
 an ordinary copy of the cache; cross-origin isolation is still recommended for lower memory use.
+
+### Messages from an embedding page
+
+A page that holds the viewer in a frame can change it with `postMessage`, so the frame never reloads:
+
+| Message              | Effect                                  |
+| -------------------- | --------------------------------------- |
+| `{follow: "<name>"}` | Fly to this player and follow them.     |
+| `{fps: 20}`          | Frame rate cap.                         |
+| `{scale: 0.5}`       | Render resolution scale.                |
 
 ## Deploying
 
