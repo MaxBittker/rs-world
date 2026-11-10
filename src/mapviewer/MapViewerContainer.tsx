@@ -237,18 +237,6 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
                     ></Joystick>
                 </div>
             )}
-            {!hideUi && isTouchDevice && (
-                <div className="joystick-container right" role="group" aria-label="Turn camera">
-                    <Joystick
-                        size={75}
-                        baseColor="radial-gradient(circle, #3e3529, #211d17)"
-                        stickColor="radial-gradient(circle at 40% 30%, #b39b70, #6d593c)"
-                        stickSize={40}
-                        move={mapViewer.inputManager.onCameraJoystickMove}
-                        stop={mapViewer.inputManager.onCameraJoystickStop}
-                    ></Joystick>
-                </div>
-            )}
 
             <RendererCanvas renderer={renderer} />
         </div>
