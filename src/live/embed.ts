@@ -1,4 +1,4 @@
-// Embedded use (the swarm dashboard's map window).
+// Embedded use: the viewer in a frame of another page.
 // ?embed=1 hides the UI chrome (settings panel, live and info panels, minimap, fps) and frames the followed player
 // from a higher, steeper orbit that suits a wide, short window.
 // ?hideNames=a,b and ?hideNamesFrom=<url> (a JSON array of names, fetched with CORS) list players whose nameplates are
@@ -33,7 +33,7 @@ if (from) {
             hiddenOrder = [...hiddenOrder, ...list.filter((n): n is string => typeof n === "string" && !!n)];
         })
         .catch(() => {
-            /* the dashboard is down: no extra hidden names */
+            /* the list did not load: no extra hidden names */
         });
 }
 

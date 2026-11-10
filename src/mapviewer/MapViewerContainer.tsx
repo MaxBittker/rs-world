@@ -47,7 +47,7 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
 
     const renderer = mapViewer.renderer;
 
-    // ?embed=1 (the swarm dashboard): no settings panel, live/info panels, minimap or joysticks.
+    // ?embed=1: no settings panel, live/info panels, minimap or joysticks.
     const [hideUi, setHideUi] = useState(EMBED);
     const [fps, setFps] = useState(0);
     const [cameraYaw, setCameraYaw] = useState(mapViewer.camera.getYaw());
@@ -65,7 +65,7 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
         }
     }, [renderer]);
 
-    // Embedded use (the swarm dashboard): change the followed player, frame cap or resolution by postMessage,
+    // Embedded use: change the followed player, frame cap or resolution by postMessage,
     // so the parent never reloads the frame. ?fps=N caps the frame rate from the start.
     useEffect(() => {
         const q = new URLSearchParams(window.location.search);
