@@ -10,6 +10,7 @@ import { LiveWorld } from "./LiveWorld";
 import { FeedStatus, WorldFeedClient } from "./WorldFeedClient";
 import { WorldState } from "./WorldState";
 import { RosterPlayer } from "./protocol";
+import { EMBED, EMBED_FOLLOW_DISTANCE, EMBED_FOLLOW_PITCH, resolveFollow } from "./embed";
 
 // Tiles streamed around the camera; the engine caps a subscription at 384 x 384, which a radius
 // of 188 plus the grid padding fills exactly. Past that, players come from the roster instead.
@@ -156,9 +157,12 @@ export class LiveController {
         }
 
         if (this.pendingFollow && this.world.rosterTick !== -1) {
-            const name = this.pendingFollow;
-            this.pendingFollow = undefined;
-            this.goToPlayer(name, camera);
+            // The embedding page may ask for the hidden main account by marker; wait for the hidden list.
+            const name = resolveFollow(this.pendingFollow);
+            if (name) {
+                this.pendingFollow = undefined;
+                this.goToPlayer(name, camera);
+            }
         }
 
         this.updateFollow(camera, getGroundY);
@@ -289,11 +293,13 @@ export class LiveController {
 
     // Puts the orbit's default view on a tile, so the area streams in before the player is found.
     private flyTo(camera: Camera, tileX: number, tileZ: number): void {
+        const distance = EMBED ? EMBED_FOLLOW_DISTANCE : FOLLOW_DISTANCE;
+        const pitch = EMBED ? EMBED_FOLLOW_PITCH : FOLLOW_PITCH;
         camera.yaw = FOLLOW_YAW;
-        camera.pitch = FOLLOW_PITCH;
-        this.orbitDistance = FOLLOW_DISTANCE;
-        placeOrbitCamera(camera, tileX, camera.getPosY(), tileZ, FOLLOW_DISTANCE);
-        camera.pos[1] = -FOLLOW_DISTANCE * Math.sin(-FOLLOW_PITCH * RS_TO_RADIANS);
+        camera.pitch = pitch;
+        this.orbitDistance = distance;
+        placeOrbitCamera(camera, tileX, camera.getPosY(), tileZ, distance);
+        camera.pos[1] = -distance * Math.sin(-pitch * RS_TO_RADIANS);
     }
 
     private updateFollow(camera: Camera, getGroundY: (e: LiveEntity) => number | undefined): void {
@@ -352,6 +358,11 @@ export class LiveController {
             camera.pitch = Math.round(
                 Math.asin(clamp(-dy / Math.max(distance, 0.001), -1, 1)) / RS_TO_RADIANS,
             );
+            if (EMBED) {
+                // Same framing for every followed bot, wherever the camera came from.
+                this.orbitDistance = EMBED_FOLLOW_DISTANCE;
+                camera.pitch = EMBED_FOLLOW_PITCH;
+            }
         }
 
         camera.pitch = clamp(camera.pitch, MIN_ORBIT_PITCH, MAX_ORBIT_PITCH);
