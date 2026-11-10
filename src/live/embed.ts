@@ -30,7 +30,10 @@ if (from) {
         .then((list: unknown) => {
             if (!Array.isArray(list)) return;
             for (const n of list) if (typeof n === "string" && n) hidden.add(n.toLowerCase());
-            hiddenOrder = [...hiddenOrder, ...list.filter((n): n is string => typeof n === "string" && !!n)];
+            hiddenOrder = [
+                ...hiddenOrder,
+                ...list.filter((n): n is string => typeof n === "string" && !!n),
+            ];
         })
         .catch(() => {
             /* the list did not load: no extra hidden names */

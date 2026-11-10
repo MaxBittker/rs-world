@@ -79,7 +79,8 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
             if (!d || typeof d !== "object") return;
             const live = renderer.mapViewer.live;
             if (typeof d.follow === "string" && live) {
-                if (live.followName?.toLowerCase() !== d.follow.toLowerCase()) live.pendingFollow = d.follow;
+                if (live.followName?.toLowerCase() !== d.follow.toLowerCase())
+                    live.pendingFollow = d.follow;
             }
             if (typeof d.fps === "number" && d.fps > 0) renderer.fpsLimit = d.fps;
             if (typeof d.scale === "number" && d.scale > 0) renderer.resolutionScale = d.scale;
@@ -218,7 +219,11 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
 
             {menuProps && <OsrsMenu {...menuProps} />}
 
-            <MapViewerControls renderer={renderer} hideUi={hideUi || EMBED} setHideUi={EMBED ? () => {} : setHideUi} />
+            <MapViewerControls
+                renderer={renderer}
+                hideUi={hideUi || EMBED}
+                setHideUi={EMBED ? () => {} : setHideUi}
+            />
 
             {!hideUi && (
                 <span>

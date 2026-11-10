@@ -9,8 +9,8 @@ import { LiveEntity, LivePlayer } from "./LiveEntity";
 import { LiveWorld } from "./LiveWorld";
 import { FeedStatus, WorldFeedClient } from "./WorldFeedClient";
 import { WorldState } from "./WorldState";
-import { RosterPlayer } from "./protocol";
 import { EMBED, EMBED_FOLLOW_DISTANCE, EMBED_FOLLOW_PITCH, resolveFollow } from "./embed";
+import { RosterPlayer } from "./protocol";
 
 // Tiles streamed around the camera; the engine caps a subscription at 384 x 384, which a radius
 // of 188 plus the grid padding fills exactly. Past that, players come from the roster instead.
