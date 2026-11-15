@@ -17,8 +17,8 @@ concurrency:
 env:
     # The server whose cache the site is built from and whose world feed it streams.
     # Override either with repository variables of the same name.
-    RS_SDK_SERVER: ${{ vars.RS_SDK_SERVER || 'https://rs-sdk-demo.fly.dev' }}
-    WORLD_FEED_URL: ${{ vars.WORLD_FEED_URL || 'wss://rs-sdk-demo.fly.dev/worldfeed' }}
+    RS_SDK_SERVER: ${{ vars.RS_SDK_SERVER || 'https://rs-sdk.maxbittker.com' }}
+    WORLD_FEED_URL: ${{ vars.WORLD_FEED_URL || 'wss://rs-sdk.maxbittker.com/worldfeed' }}
 
 jobs:
     build:

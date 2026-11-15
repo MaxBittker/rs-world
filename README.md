@@ -46,8 +46,8 @@ yarn start                      # http://localhost:3000, feed defaults to ws://l
 To watch a remote server, sync its cache over HTTP and point the viewer at its feed:
 
 ```sh
-yarn sync-cache --server https://rs-sdk-demo.fly.dev
-# then open http://localhost:3000/?live=wss://rs-sdk-demo.fly.dev/worldfeed
+yarn sync-cache --server https://rs-sdk.maxbittker.com
+# then open http://localhost:3000/?live=wss://rs-sdk.maxbittker.com/worldfeed
 ```
 
 That only works if that server runs with `WORLD_FEED=true`.
@@ -74,8 +74,8 @@ an ordinary copy of the cache; cross-origin isolation is still recommended for l
 ## Deploying
 
 Every push to `main` deploys to GitHub Pages at https://maxbittker.github.io/rs-world/
-(`.github/workflows/pages.yml`). The workflow syncs the cache from `https://rs-sdk-demo.fly.dev` and
-defaults the feed to `wss://rs-sdk-demo.fly.dev/worldfeed`. Set the `RS_SDK_SERVER` and
+(`.github/workflows/pages.yml`). The workflow syncs the cache from `https://rs-sdk.maxbittker.com` and
+defaults the feed to `wss://rs-sdk.maxbittker.com/worldfeed`. Set the `RS_SDK_SERVER` and
 `WORLD_FEED_URL` repository variables to point it elsewhere.
 
 Elsewhere, `yarn build` gives a static site. Copy `caches/` to `build/caches/` and host the result with:
