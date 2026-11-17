@@ -1,3 +1,4 @@
+import { isNameHidden } from "./embed";
 import { vec4 } from "gl-matrix";
 
 import { Camera } from "../mapviewer/Camera";
@@ -161,7 +162,7 @@ export class LiveOverlay {
                 followed: isFollowed,
                 top,
                 head,
-                name: showName ? (isPlayer ? e.getName() : formatNpcName(e as LiveNpc)) : undefined,
+                name: showName && !(isPlayer && isNameHidden(e.getName())) ? (isPlayer ? e.getName() : formatNpcName(e as LiveNpc)) : undefined,
                 nameColour: isFollowed ? "#ff981f" : isPlayer ? "#ffffff" : "#ffff00",
                 nameAlpha,
                 nameY: top.y - 8,
@@ -180,7 +181,7 @@ export class LiveOverlay {
                 const dz = p.z / 128 - camera.getPosZ();
                 const alpha = getFogVisibility(dx, dz, renderDistance, fogDepth);
                 const top = alpha > 0 ? this.project(camera, p.x, p.groundY - p.height - 15, p.z, width, height) : undefined;
-                if (top) {
+                if (top && !isNameHidden(p.name)) {
                     farNames.push({ name: p.name, alpha, distance: dx * dx + dz * dz, top, placed: false });
                 }
             }

@@ -10,6 +10,7 @@ import { WorldMapModal } from "../components/rs/worldmap/WorldMapModal";
 import { InfoPanel } from "../live/InfoPanel";
 import { LiveOverlay } from "../live/LiveOverlay";
 import { LivePanel } from "../live/LivePanel";
+import { EMBED } from "../live/embed";
 import { RS_TO_DEGREES } from "../rs/MathConstants";
 import { isMobileDevice, isTouchDevice } from "../util/DeviceUtil";
 import { MapViewer } from "./MapViewer";
@@ -46,7 +47,8 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
 
     const renderer = mapViewer.renderer;
 
-    const [hideUi, setHideUi] = useState(false);
+    // ?embed=1: no settings panel, live/info panels, minimap or joysticks.
+    const [hideUi, setHideUi] = useState(EMBED);
     const [fps, setFps] = useState(0);
     const [cameraYaw, setCameraYaw] = useState(mapViewer.camera.getYaw());
     const [isWorldMapOpen, setWorldMapOpen] = useState<boolean>(false);
@@ -61,6 +63,30 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
             // viewer: in StrictMode the app builds two viewers and the first one renders.
             (window as any).mapViewer = renderer.mapViewer;
         }
+    }, [renderer]);
+
+    // Embedded use: change the followed player, frame cap or resolution by postMessage,
+    // so the parent never reloads the frame. ?fps=N caps the frame rate from the start.
+    useEffect(() => {
+        const q = new URLSearchParams(window.location.search);
+        const fps = Number(q.get("fps"));
+        if (fps > 0) renderer.fpsLimit = fps;
+        // ?scale=0.5 renders at half resolution: about a quarter of the pixel work.
+        const scale = Number(q.get("scale"));
+        if (scale > 0) renderer.resolutionScale = scale;
+        const onMessage = (e: MessageEvent) => {
+            const d = e.data;
+            if (!d || typeof d !== "object") return;
+            const live = renderer.mapViewer.live;
+            if (typeof d.follow === "string" && live) {
+                if (live.followName?.toLowerCase() !== d.follow.toLowerCase())
+                    live.pendingFollow = d.follow;
+            }
+            if (typeof d.fps === "number" && d.fps > 0) renderer.fpsLimit = d.fps;
+            if (typeof d.scale === "number" && d.scale > 0) renderer.resolutionScale = d.scale;
+        };
+        window.addEventListener("message", onMessage);
+        return () => window.removeEventListener("message", onMessage);
     }, [renderer]);
 
     const animate = (time: DOMHighResTimeStamp) => {
@@ -193,7 +219,11 @@ export function MapViewerContainer({ mapViewer }: MapViewerContainerProps): JSX.
 
             {menuProps && <OsrsMenu {...menuProps} />}
 
-            <MapViewerControls renderer={renderer} hideUi={hideUi} setHideUi={setHideUi} />
+            <MapViewerControls
+                renderer={renderer}
+                hideUi={hideUi || EMBED}
+                setHideUi={EMBED ? () => {} : setHideUi}
+            />
 
             {!hideUi && (
                 <span>
